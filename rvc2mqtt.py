@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 
-import argparse, array, can, json, os, queue, re, signal, threading, time, sys, serial
+import argparse, array, can, json, os, queue, re, signal, threading, time, sys, serial, time, configparser
 import paho.mqtt.client as mqtt
 import ruamel.yaml as yaml
 
+config = configparser.ConfigParser()
+config.read('rvc2mqtt.ini')
+debug_level = config.getint('General', 'debug')
+parameterized_strings = config.getboolean('General', 'parameterized_strings')  
+screenOut = config.getint('General', 'screenout')
+specfile = config.get('General', 'specfile')   
+mqttBroker = config.get('MQTT', 'mqttBroker')
+mqttUser = config.get('MQTT', 'mqttUser')
+mqttPass = config.get('MQTT', 'mqttPass')
+mqttOut = config.getint('MQTT', 'mqttOut')
+mqttOutputTopic = config.get('MQTT', 'mqttOutputTopic')
+canbus = config.get('CAN', 'CANport')
 
 def signal_handler(signal, frame):
     global t
@@ -12,8 +24,6 @@ def signal_handler(signal, frame):
     print('')
     t.kill_received = True
     exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)
 
 def on_mqtt_connect(client, userdata, flags, rc):
     if debug_level:
@@ -58,19 +68,17 @@ def on_mqtt_publish(client, userdata, mid):
 #   can_tx( 0x19FEDB99, [0x02, 0xFF, 0xC8, 0x03, 0xFF, 0x00, 0xFF, 0xFF] )
 #   can_tx( 0x19FEDB99, '02FFC803FF00FFFF' )
 #
-def can_tx(canid,canmsg):
-    if isinstance(canmsg, str):
-        tmp = canmsg
-        canmsg = [int(tmp[x:x+2],16) for x in range( 0, len(tmp), 2 )]
-    msg = can.Message(arbitration_id=canid, data=canmsg, extended_id=True)
-    try:
-        bus.send(msg)
-        if debug_level>0:
-            print("Message sent on {}".format(bus.channel_info))
-    except can.CanError:
-        print("CAN Send Failed")
-
-import time
+#def can_tx(canid,canmsg):
+#    if isinstance(canmsg, str):
+#        tmp = canmsg
+#        canmsg = [int(tmp[x:x+2],16) for x in range( 0, len(tmp), 2 )]
+#    msg = can.Message(arbitration_id=canid, data=canmsg, extended_id=True)
+#    try:
+#        bus.send(msg)
+#        if debug_level>0:
+#            print("Message sent on {}".format(bus.channel_info))
+#    except can.CanError:
+#        print("CAN Send Failed")
 
 class TCP_CANWatcher(threading.Thread):
     def __init__(self, queue):
@@ -84,7 +92,7 @@ class TCP_CANWatcher(threading.Thread):
             if not connected:
                 try:
                     bus = can.interface.Bus(bustype='slcan',
-                                            channel='socket://' + CANbus,
+                                            channel='socket://' + canbus,
                                             rtscts=True,
                                             bitrate=250000)
                     connected = True
@@ -428,6 +436,8 @@ def process_Tiffin(topic, payload, previous_values):
                     new_topic = "IGNORE"
             yield new_topic, new_payload
 
+signal.signal(signal.SIGINT, signal_handler)
+
 def main():
     retain=False
     previous_values = {}
@@ -482,7 +492,7 @@ def main():
 
     def mainLoop():
         client = mqtt.Client()
-        client.username_pw_set("hassio", "hassio")  # Add this line with your MQTT broker credentials
+        client.username_pw_set(mqttUser, mqttPass)  # Add this line with your MQTT broker credentials
         client.on_connect = on_mqtt_connect
         client.on_subscribe = on_mqtt_subscribe
         client.on_message = on_mqtt_message
@@ -501,24 +511,7 @@ def main():
     mainLoop()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-b", "--broker", default = "192.168.50.77", help="MQTT Broker Host")
-    parser.add_argument("-d", "--debug", default = 0, type=int, choices=[0, 1, 2], help="debug data")
-    parser.add_argument("-m", "--mqtt", default = 2, type=int, choices=[0, 1, 2], help="Send to MQTT, 1=Publish, 2=Retain")
-    parser.add_argument("-O", "--output", default = 0, type=int, choices=[0, 1], help="Dump parsed data to stdout")
-    parser.add_argument("-s", "--specfile", default = "rvc-spec.yml", help="RVC Spec file")
-    parser.add_argument("-o", "--output_topic", default = "RVC2", help="Output MQTT topic prefix")
-    parser.add_argument("-p", "--pstrings", action='store_true', help="Send parameterized strings to mqtt")
-    parser.add_argument("-c", "--canbus", default = "192.168.50.103:3333", help="SLCAN IP and port")
-    args = parser.parse_args()
 
-    debug_level = args.debug
-    mqttOut = args.mqtt
-    mqttBroker = args.broker
-    mqttOutputTopic = args.output_topic
-    screenOut = args.output
-    parameterized_strings = args.pstrings
-    CANbus = args.canbus
 
     if mqttOut:
         mqttc = mqtt.Client() #create new instance
@@ -534,8 +527,8 @@ if __name__ == "__main__":
         except:
             print("MQTT Broker Connection Failed")
 
-    print("Loading RVC Spec file {}.".format(args.specfile))
-    with open(args.specfile,'r') as specfile:
+    print("Loading RVC Spec file {}.".format(specfile))
+    with open(specfile,'r') as specfile:
         try:
             spec=yaml.round_trip_load(specfile)
         except yaml.YAMLError as err:
