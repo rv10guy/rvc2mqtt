@@ -3,8 +3,9 @@
 import argparse, array, can, json, os, queue, re, signal, threading, time, sys, serial, time, configparser
 import paho.mqtt.client as mqtt
 import ruamel.yaml as yaml
+from datetime import datetime
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser(inline_comment_prefixes=';')
 config.read('rvc2mqtt.ini')
 debug_level = config.getint('General', 'debug')
 parameterized_strings = config.getboolean('General', 'parameterized_strings')  
@@ -16,6 +17,7 @@ mqttPass = config.get('MQTT', 'mqttPass')
 mqttOut = config.getint('MQTT', 'mqttOut')
 mqttOutputTopic = config.get('MQTT', 'mqttOutputTopic')
 canbus = config.get('CAN', 'CANport')
+last_msg_time = None
 
 def signal_handler(signal, frame):
     global t
@@ -35,6 +37,7 @@ def on_mqtt_subscribe(client, userdata, mid, granted_qos):
         print("MQTT Sub: "+str(mid))
 
 def on_mqtt_message(client, userdata, msg):
+    global last_msg_time
     try:
         topic = msg.topic[13:]
         payload = json.loads(msg.payload)
@@ -119,6 +122,19 @@ class TCP_CANWatcher(threading.Thread):
         if connected:
             bus.shutdown()
 
+def mqtt_safe_publish(client, topic, payload, retain):
+    global last_msg_time
+    # Publish the main MQTT message
+    client.publish(topic, payload, retain=retain)
+    
+    # Get the current timestamp
+    current_time = time.time()
+
+    # Convert the current time to a human-readable format
+    human_readable_time = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+
+    # Publish the time since the last message to an MQTT topic
+    client.publish("OpenRoad/time_of_last", human_readable_time, retain=retain)
 
 def rvc_decode(mydgn, mydata):
     result = { 'dgn':mydgn, 'data':mydata, 'name':"UNKNOWN-"+mydgn }
@@ -346,25 +362,30 @@ def process_Tiffin(topic, payload, previous_values):
         return [(newtopic, newpayload)]
 
     def process_thermostat(topic, payload):
-
+        newtopic = "IGNORE"
+        newpayload = "IGNORE"
         ## Process Operating Mode
-        if payload['operating mode definition'] == "heat" and topic == mqttOutputTopic + "/RVC/THERMOSTAT_STATUS_1/0":
-            newpayload = "ON"
-            newtopic = "OpenRoad/HVAC/front/state/auxheat"
-        elif payload['operating mode definition'] == "off" and topic == mqttOutputTopic + "/RVC/THERMOSTAT_STATUS_1/3":
-            newtopic = "IGNORE"
-        elif payload['operating mode definition'] == "off" and topic == mqttOutputTopic + "/RVC/THERMOSTAT_STATUS_1/4":
-            newtopic = "IGNORE"
+        if topic == mqttOutputTopic + "/THERMOSTAT_STATUS_1/0":
+            if payload['operating mode definition'] == "heat":
+                newpayload = "ON"
+                newtopic = "OpenRoad/HVAC/front/state/auxheat"
+            else:
+                newtopic = "OpenRoad/HVAC/front/state/mode"
+                newpayload = payload['operating mode definition'].upper()
+        elif topic == mqttOutputTopic + "/THERMOSTAT_STATUS_1/3":
+            if payload['operating mode definition'] == "heat":
+                newtopic = "OpenRoad/HVAC/front/state/mode"
+                newpayload = "HEAT"
+        elif topic == mqttOutputTopic + "/THERMOSTAT_STATUS_1/2":
+                newtopic = "OpenRoad/HVAC/rear/state/mode"
+                newpayload = payload['operating mode definition'].upper()
+        elif topic == mqttOutputTopic + "/THERMOSTAT_STATUS_1/4":
+            if payload['operating mode definition'] == "heat":
+                newtopic = "OpenRoad/HVAC/rear/state/mode"
+                newpayload = "HEAT"
         else:
-            lookup_table = {
-            mqttOutputTopic + "/THERMOSTAT_STATUS_1/0": "OpenRoad/HVAC/front/state/mode",
-            mqttOutputTopic + "/THERMOSTAT_STATUS_1/2": "OpenRoad/HVAC/rear/state/mode",
-            mqttOutputTopic + "/THERMOSTAT_STATUS_1/3": "OpenRoad/HVAC/front/state/mode",
-            mqttOutputTopic + "/THERMOSTAT_STATUS_1/4": "OpenRoad/HVAC/rear/state/mode",
-            }
-            newtopic = lookup_table.get(topic, "IGNORE")
-            newpayload = payload['operating mode definition'].upper()
-
+            newtopic = "IGNORE"
+            newpayload = "IGNORE"
         messages.append((newtopic, newpayload))
 
         ## Process Fan Mode
@@ -442,10 +463,13 @@ def main():
     retain=False
     previous_values = {}
 
+
     if(mqttOut==2):
         retain=True
 
     def get_json_line():
+        global last_msg_time
+
         if q.empty():
             return
         json_data = q.get()
@@ -486,9 +510,9 @@ def main():
                     print("Publishing to MQTT topic:", topic)  # Debug print
                 for newtopic, payload in process_Tiffin(topic, json.dumps(myresult),previous_values):
                     if newtopic == "UNCHANGED":
-                        mqttc.publish(topic, json.dumps(myresult), retain=retain)
+                        mqtt_safe_publish(mqttc, topic, json.dumps(myresult),retain)
                     elif newtopic != "IGNORE":
-                        mqttc.publish(newtopic, payload, retain=retain)
+                        mqtt_safe_publish(mqttc, newtopic, payload, retain)
 
     def mainLoop():
         client = mqtt.Client()
