@@ -5,20 +5,29 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
 import ruamel.yaml as yaml
 from datetime import datetime
+from ha_discovery import HADiscovery
 
 config = configparser.ConfigParser(inline_comment_prefixes=';')
 config.read('rvc2mqtt.ini')
 debug_level = config.getint('General', 'debug')
-parameterized_strings = config.getboolean('General', 'parameterized_strings')  
+parameterized_strings = config.getboolean('General', 'parameterized_strings')
 screenOut = config.getint('General', 'screenout')
-specfile = config.get('General', 'specfile')   
+specfile = config.get('General', 'specfile')
 mqttBroker = config.get('MQTT', 'mqttBroker')
 mqttUser = config.get('MQTT', 'mqttUser')
 mqttPass = config.get('MQTT', 'mqttPass')
 mqttOut = config.getint('MQTT', 'mqttOut')
 mqttOutputTopic = config.get('MQTT', 'mqttOutputTopic')
 canbus = config.get('CAN', 'CANport')
+
+# Home Assistant Discovery settings
+ha_discovery_enabled = config.getboolean('HomeAssistant', 'discovery_enabled', fallback=False)
+ha_discovery_prefix = config.get('HomeAssistant', 'discovery_prefix', fallback='homeassistant')
+ha_mapping_file = config.get('HomeAssistant', 'mapping_file', fallback='mappings/tiffin_default.yaml')
+ha_legacy_topics = config.getboolean('HomeAssistant', 'legacy_topics', fallback=True)
+
 last_msg_time = None
+ha_discovery = None  # Will be initialized if discovery is enabled
 
 def signal_handler(signal, frame):
     global t
@@ -127,7 +136,7 @@ def mqtt_safe_publish(client, topic, payload, retain):
     global last_msg_time
     # Publish the main MQTT message
     client.publish(topic, payload, retain=retain)
-    
+
     # Get the current timestamp
     current_time = time.time()
 
@@ -136,6 +145,93 @@ def mqtt_safe_publish(client, topic, payload, retain):
 
     # Publish the time since the last message to an MQTT topic
     client.publish("OpenRoad/time_of_last", human_readable_time, retain=retain)
+
+def publish_ha_state(mqttc, dgn, instance, decoded_data, retain):
+    """
+    Publish state messages for Home Assistant entities
+
+    Args:
+        mqttc: MQTT client
+        dgn: RV-C message name (DGN)
+        instance: Instance number or None
+        decoded_data: Decoded RV-C message dictionary
+        retain: Whether to retain the message
+    """
+    if not ha_discovery:
+        return
+
+    # Find matching entities in the mapping
+    entities = ha_discovery.get_entity_by_rvc_message(dgn, instance)
+
+    for entity in entities:
+        try:
+            # Extract value based on entity configuration
+            value = ha_discovery.extract_value(entity, decoded_data)
+
+            if value is None:
+                continue
+
+            entity_type = entity['entity_type']
+
+            if entity_type == 'sensor' or entity_type == 'binary_sensor':
+                # Simple sensors: publish single value
+                state_topic = ha_discovery.get_state_topic(entity)
+
+                # Convert binary sensor values to ON/OFF
+                if entity_type == 'binary_sensor':
+                    on_value = entity.get('on_value', '01')
+                    if str(value) == on_value or value == True or value == 1:
+                        value = "ON"
+                    else:
+                        value = "OFF"
+
+                mqttc.publish(state_topic, str(value), retain=retain)
+
+            elif entity_type == 'light':
+                # Lights: publish state and brightness
+                state_topic = ha_discovery.get_state_topic(entity)
+
+                # Convert load status to ON/OFF
+                if str(value) == '01' or value == True or value == 1:
+                    mqttc.publish(state_topic, "ON", retain=retain)
+                else:
+                    mqttc.publish(state_topic, "OFF", retain=retain)
+
+                # TODO: Brightness support (Phase 1 is read-only)
+
+            elif entity_type == 'switch':
+                # Switches: publish ON/OFF state
+                state_topic = ha_discovery.get_state_topic(entity)
+
+                if str(value) == '01' or value == True or value == 1:
+                    mqttc.publish(state_topic, "ON", retain=retain)
+                else:
+                    mqttc.publish(state_topic, "OFF", retain=retain)
+
+            elif entity_type == 'climate':
+                # Climate: publish multiple topics
+                topics = ha_discovery.get_climate_topics(entity)
+
+                # Mode
+                mode_value = decoded_data.get(entity.get('mode_field', 'operating mode definition'))
+                if mode_value:
+                    mqttc.publish(topics['mode'], str(mode_value).lower(), retain=retain)
+
+                # Setpoint temperature
+                setpoint_value = decoded_data.get(entity.get('setpoint_field', 'setpoint temp cool F'))
+                if setpoint_value and setpoint_value != 'n/a':
+                    mqttc.publish(topics['setpoint'], str(int(round(setpoint_value))), retain=retain)
+
+                # Fan mode
+                fan_value = decoded_data.get(entity.get('fan_mode_field', 'fan mode definition'))
+                if fan_value:
+                    mqttc.publish(topics['fan'], str(fan_value).lower(), retain=retain)
+
+                # Current temperature comes from THERMOSTAT_AMBIENT_STATUS, not this message
+
+        except Exception as e:
+            if debug_level > 0:
+                print(f"Error publishing HA state for {entity.get('entity_id')}: {e}")
 
 def rvc_decode(mydgn, mydata):
     result = { 'dgn':mydgn, 'data':mydata, 'name':"UNKNOWN-"+mydgn }
@@ -505,15 +601,24 @@ def main():
                 topic = mqttOutputTopic + "/" + myresult['name']
                 try:
                     topic += "/" + str(myresult['instance'])
+                    instance = myresult['instance']
                 except:
-                    pass
+                    instance = None
+
                 if debug_level:
                     print("Publishing to MQTT topic:", topic)  # Debug print
-                for newtopic, payload in process_Tiffin(topic, json.dumps(myresult),previous_values):
-                    if newtopic == "UNCHANGED":
-                        mqtt_safe_publish(mqttc, topic, json.dumps(myresult),retain)
-                    elif newtopic != "IGNORE":
-                        mqtt_safe_publish(mqttc, newtopic, payload, retain)
+
+                # Publish to Home Assistant discovery topics
+                if ha_discovery_enabled and ha_discovery:
+                    publish_ha_state(mqttc, myresult['name'], instance, myresult, retain)
+
+                # Publish to legacy topics (if enabled)
+                if ha_legacy_topics:
+                    for newtopic, payload in process_Tiffin(topic, json.dumps(myresult),previous_values):
+                        if newtopic == "UNCHANGED":
+                            mqtt_safe_publish(mqttc, topic, json.dumps(myresult),retain)
+                        elif newtopic != "IGNORE":
+                            mqtt_safe_publish(mqttc, newtopic, payload, retain)
 
     def mainLoop():
         client = mqtt.Client(CallbackAPIVersion.VERSION2)
@@ -540,15 +645,40 @@ if __name__ == "__main__":
 
     if mqttOut:
         mqttc = mqtt.Client(CallbackAPIVersion.VERSION2) #create new instance
-        mqttc.username_pw_set("hassio", "hassio")  # Add this line with your MQTT broker credentials
+        mqttc.username_pw_set(mqttUser, mqttPass)
         mqttc.on_connect = on_mqtt_connect
         mqttc.on_subscribe = on_mqtt_subscribe
         mqttc.on_message = on_mqtt_message
         mqttc.on_publish = on_mqtt_publish
 
+        # Set up Home Assistant Discovery if enabled
+        if ha_discovery_enabled:
+            try:
+                print("Loading HA MQTT Discovery mapping from {}...".format(ha_mapping_file))
+                ha_discovery = HADiscovery(ha_mapping_file, ha_discovery_prefix)
+                print("Loaded {} entities for HA Discovery".format(len(ha_discovery.entities)))
+
+                # Set availability will message (published when we disconnect)
+                availability_topic = "{}/status".format(ha_discovery.state_topic_prefix)
+                mqttc.will_set(availability_topic, "offline", retain=True, qos=1)
+            except Exception as e:
+                print("Error loading HA Discovery mapping: {}".format(e))
+                ha_discovery = None
+
         try:
             print("Connecting to MQTT: {0:s}".format(mqttBroker))
             mqttc.connect(mqttBroker, port=1883) #connect to broker
+
+            # Publish HA Discovery messages and availability status
+            if ha_discovery:
+                print("Publishing HA MQTT Discovery messages...")
+                ha_discovery.publish_discovery_messages(mqttc, debug_level)
+
+                # Publish online status
+                availability_topic = "{}/status".format(ha_discovery.state_topic_prefix)
+                mqttc.publish(availability_topic, "online", retain=True, qos=1)
+                print("HA MQTT Discovery complete - entities should appear in Home Assistant")
+
         except:
             print("MQTT Broker Connection Failed")
 
