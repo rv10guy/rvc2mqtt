@@ -1,0 +1,468 @@
+# RV-C to Home Assistant Entity Mapping
+# Manufacturer: Tiffin Motorhomes
+# Model: Generic/Default
+# Version: 1.0
+#
+# This file maps RV-C CAN bus messages to Home Assistant entities.
+# Edit this file to customize entity names, icons, and device grouping.
+
+metadata:
+  name: "Tiffin Motorhome Default Mapping"
+  manufacturer: "Tiffin"
+  model: "Generic"
+  version: "1.0"
+  description: "Default mapping for Tiffin motorhomes with standard RV-C implementation"
+
+# Global settings
+settings:
+  # Topic prefix for state messages (discovery always uses 'homeassistant')
+  state_topic_prefix: "rv"
+
+  # Device ID prefix (makes devices unique if you have multiple RVs)
+  device_id_prefix: "rv"
+
+  # Software version to report in device info
+  sw_version: "2.0.0"
+
+# Device definitions - groups of related entities
+# Each device appears as a single device in HA with multiple entities
+devices:
+  power:
+    identifier: "power"
+    name: "RV Power Systems"
+    model: "DC/AC Power Monitoring"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  tanks:
+    identifier: "tanks"
+    name: "RV Tank Monitoring"
+    model: "Fresh/Gray/Black/Propane"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  hvac_front:
+    identifier: "hvac_front"
+    name: "HVAC Front Zone"
+    model: "Climate Control"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  hvac_rear:
+    identifier: "hvac_rear"
+    name: "HVAC Rear Zone"
+    model: "Climate Control"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  lighting:
+    identifier: "lighting"
+    name: "RV Lighting"
+    model: "DC Dimmer Control"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  systems:
+    identifier: "systems"
+    name: "RV Systems"
+    model: "Generator, Pumps, Heaters"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  vents:
+    identifier: "vents"
+    name: "RV Ventilation"
+    model: "Vent Fans and Lids"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+# Entity mappings - each RV-C message maps to one or more HA entities
+entities:
+  # ============================================================================
+  # TANK SENSORS
+  # ============================================================================
+  - rvc_message: "TANK_STATUS"
+    instance: 0
+    entity_type: "sensor"
+    entity_id: "tank_fresh_0"
+    name: "Fresh Water Tank"
+    device: "tanks"
+    device_class: null  # No specific device class for percentage
+    unit_of_measurement: "%"
+    icon: "mdi:water"
+    state_class: "measurement"
+    # Calculate percentage from relative_level and resolution
+    value_template: "int(round(value['relative_level'] / value['resolution'] * 100, 0))"
+
+  - rvc_message: "TANK_STATUS"
+    instance: 1
+    entity_type: "sensor"
+    entity_id: "tank_black_1"
+    name: "Black Water Tank"
+    device: "tanks"
+    device_class: null
+    unit_of_measurement: "%"
+    icon: "mdi:water-off"
+    state_class: "measurement"
+    value_template: "int(round(value['relative_level'] / value['resolution'] * 100, 0))"
+
+  - rvc_message: "TANK_STATUS"
+    instance: 2
+    entity_type: "sensor"
+    entity_id: "tank_gray_2"
+    name: "Gray Water Tank"
+    device: "tanks"
+    device_class: null
+    unit_of_measurement: "%"
+    icon: "mdi:water-minus"
+    state_class: "measurement"
+    value_template: "int(round(value['relative_level'] / value['resolution'] * 100, 0))"
+
+  - rvc_message: "TANK_STATUS"
+    instance: 3
+    entity_type: "sensor"
+    entity_id: "tank_propane_3"
+    name: "Propane Tank"
+    device: "tanks"
+    device_class: "gas"
+    unit_of_measurement: "%"
+    icon: "mdi:propane-tank"
+    state_class: "measurement"
+    value_template: "int(round(value['relative_level'] / value['resolution'] * 100, 0))"
+
+  # ============================================================================
+  # POWER / BATTERY SENSORS
+  # ============================================================================
+  - rvc_message: "DC_SOURCE_STATUS_1"
+    instance: 1
+    entity_type: "sensor"
+    entity_id: "battery_house"
+    name: "House Battery Voltage"
+    device: "power"
+    device_class: "voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:battery"
+    state_class: "measurement"
+    value_template: "value['dc voltage']"
+
+  - rvc_message: "DC_SOURCE_STATUS_1"
+    instance: 2
+    entity_type: "sensor"
+    entity_id: "battery_chassis"
+    name: "Chassis Battery Voltage"
+    device: "power"
+    device_class: "voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:car-battery"
+    state_class: "measurement"
+    value_template: "value['dc voltage']"
+
+  # ============================================================================
+  # TEMPERATURE SENSORS
+  # ============================================================================
+  - rvc_message: "THERMOSTAT_AMBIENT_STATUS"
+    instance: 0
+    entity_type: "sensor"
+    entity_id: "temperature_front"
+    name: "Front Zone Temperature"
+    device: "hvac_front"
+    device_class: "temperature"
+    unit_of_measurement: "°F"
+    icon: "mdi:thermometer"
+    state_class: "measurement"
+    value_template: "round(value['ambient temp F'], 1)"
+
+  - rvc_message: "THERMOSTAT_AMBIENT_STATUS"
+    instance: 2
+    entity_type: "sensor"
+    entity_id: "temperature_rear"
+    name: "Rear Zone Temperature"
+    device: "hvac_rear"
+    device_class: "temperature"
+    unit_of_measurement: "°F"
+    icon: "mdi:thermometer"
+    state_class: "measurement"
+    value_template: "round(value['ambient temp F'], 1)"
+
+  # ============================================================================
+  # CLIMATE ENTITIES (HVAC THERMOSTATS)
+  # Note: Phase 1 is read-only, Phase 2 will add command topics
+  # ============================================================================
+  - rvc_message: "THERMOSTAT_STATUS_1"
+    instance: 0
+    entity_type: "climate"
+    entity_id: "hvac_front"
+    name: "Front HVAC"
+    device: "hvac_front"
+    modes: ["off", "cool", "heat", "auto"]
+    fan_modes: ["auto", "low", "high"]
+    temp_step: 1
+    min_temp: 60
+    max_temp: 85
+    temperature_unit: "F"
+    precision: 1.0
+    # These fields map to RVC data
+    mode_field: "operating mode definition"
+    fan_mode_field: "fan mode definition"
+    setpoint_field: "setpoint temp cool F"
+    current_temp_source: "THERMOSTAT_AMBIENT_STATUS"  # Links to temp sensor
+
+  - rvc_message: "THERMOSTAT_STATUS_1"
+    instance: 2
+    entity_type: "climate"
+    entity_id: "hvac_rear"
+    name: "Rear HVAC"
+    device: "hvac_rear"
+    modes: ["off", "cool", "heat", "auto"]
+    fan_modes: ["auto", "low", "high"]
+    temp_step: 1
+    min_temp: 60
+    max_temp: 85
+    temperature_unit: "F"
+    precision: 1.0
+    mode_field: "operating mode definition"
+    fan_mode_field: "fan mode definition"
+    setpoint_field: "setpoint temp cool F"
+    current_temp_source: "THERMOSTAT_AMBIENT_STATUS"
+
+  # ============================================================================
+  # LIGHTS (from DC_DIMMER_STATUS_3)
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 1
+    entity_type: "light"
+    entity_id: "light_ceiling"
+    name: "Ceiling Light"
+    device: "lighting"
+    icon: "mdi:ceiling-light"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 2
+    entity_type: "light"
+    entity_id: "light_entry"
+    name: "Entry Light"
+    device: "lighting"
+    icon: "mdi:lightbulb"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 3
+    entity_type: "light"
+    entity_id: "light_task"
+    name: "Task Light"
+    device: "lighting"
+    icon: "mdi:desk-lamp"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 4
+    entity_type: "light"
+    entity_id: "light_hall"
+    name: "Hall Light"
+    device: "lighting"
+    icon: "mdi:lightbulb"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 5
+    entity_type: "light"
+    entity_id: "light_bedroom"
+    name: "Bedroom Light"
+    device: "lighting"
+    icon: "mdi:bed-king"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 6
+    entity_type: "light"
+    entity_id: "light_bathroom"
+    name: "Bathroom Light"
+    device: "lighting"
+    icon: "mdi:toilet"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 8
+    entity_type: "light"
+    entity_id: "light_floor"
+    name: "Floor Light"
+    device: "lighting"
+    icon: "mdi:floor-lamp"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 9
+    entity_type: "light"
+    entity_id: "light_dinette"
+    name: "Dinette Light"
+    device: "lighting"
+    icon: "mdi:table-furniture"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 10
+    entity_type: "light"
+    entity_id: "light_sconce"
+    name: "Sconce Light"
+    device: "lighting"
+    icon: "mdi:wall-sconce-flat"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 11
+    entity_type: "light"
+    entity_id: "light_tv_accent"
+    name: "TV Accent Light"
+    device: "lighting"
+    icon: "mdi:television"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 12
+    entity_type: "light"
+    entity_id: "light_awning"
+    name: "Awning Light"
+    device: "lighting"
+    icon: "mdi:coach-lamp"
+    supports_brightness: true
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 94
+    entity_type: "light"
+    entity_id: "light_porch"
+    name: "Porch Light"
+    device: "lighting"
+    icon: "mdi:porch-light"
+    supports_brightness: true
+    state_field: "load status"
+
+  # ============================================================================
+  # SWITCHES (Pumps, Heaters, etc.)
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 93
+    entity_type: "switch"
+    entity_id: "pump_water"
+    name: "Water Pump"
+    device: "systems"
+    icon: "mdi:pump"
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 95
+    entity_type: "switch"
+    entity_id: "heater_electric"
+    name: "Electric Water Heater"
+    device: "systems"
+    icon: "mdi:water-boiler"
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 96
+    entity_type: "switch"
+    entity_id: "heater_gas"
+    name: "Gas Water Heater"
+    device: "systems"
+    icon: "mdi:fire"
+    state_field: "load status"
+
+  # ============================================================================
+  # VENT FANS (Binary Sensors for fan status)
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 23
+    entity_type: "binary_sensor"
+    entity_id: "fan_galley"
+    name: "Galley Vent Fan"
+    device: "vents"
+    device_class: "running"
+    icon: "mdi:fan"
+    state_field: "load status"
+    on_value: "01"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 19
+    entity_type: "binary_sensor"
+    entity_id: "fan_bath"
+    name: "Bath Vent Fan"
+    device: "vents"
+    device_class: "running"
+    icon: "mdi:fan"
+    state_field: "load status"
+    on_value: "01"
+
+  # ============================================================================
+  # BINARY SENSORS (Status indicators)
+  # ============================================================================
+  - rvc_message: "GENERATOR_STATUS_1"
+    instance: null  # Generator status has no instance
+    entity_type: "binary_sensor"
+    entity_id: "generator"
+    name: "Generator"
+    device: "systems"
+    device_class: "running"
+    icon: "mdi:engine"
+    state_field: "status definition"
+    on_value: "RUNNING"
+
+# ============================================================================
+# SPECIAL RULES
+# These handle complex mappings that don't fit the simple entity model
+# For example, vent lids that use two instances (open/close sensors)
+# ============================================================================
+special_rules:
+  # Galley vent lid - combines instances 21 (open sensor) and 22 (close sensor)
+  - rule_type: "combined_binary_sensor"
+    name: "Galley Vent Lid Position"
+    rvc_message: "DC_DIMMER_STATUS_3"
+    instances:
+      open_sensor: 21
+      close_sensor: 22
+    entity_id: "vent_galley_lid"
+    entity_type: "binary_sensor"
+    device: "vents"
+    device_class: "opening"
+    icon: "mdi:window-open-variant"
+    # Logic: if instance 21 is ON, lid is OPEN; if instance 22 is ON, lid is CLOSED
+    logic: "open_sensor_on=OPEN, close_sensor_on=CLOSED"
+
+  # Bath vent lid - combines instances 17 (open sensor) and 18 (close sensor)
+  - rule_type: "combined_binary_sensor"
+    name: "Bath Vent Lid Position"
+    rvc_message: "DC_DIMMER_STATUS_3"
+    instances:
+      open_sensor: 17
+      close_sensor: 18
+    entity_id: "vent_bath_lid"
+    entity_type: "binary_sensor"
+    device: "vents"
+    device_class: "opening"
+    icon: "mdi:window-open-variant"
+    logic: "open_sensor_on=OPEN, close_sensor_on=CLOSED"
+
+  # HVAC aux heat handling (instance 0 with mode=heat means aux heat is on)
+  # This is handled specially in thermostat processing
+  - rule_type: "hvac_aux_heat"
+    rvc_message: "THERMOSTAT_STATUS_1"
+    instance: 0
+    creates_entity: true
+    entity_id: "hvac_front_aux_heat"
+    entity_type: "binary_sensor"
+    name: "Front HVAC Aux Heat"
+    device: "hvac_front"
+    device_class: "heat"
+    icon: "mdi:radiator"
+    # When THERMOSTAT_STATUS_1 instance 0 mode=heat, aux heat is ON
+    condition: "value['operating mode definition'] == 'heat'"
