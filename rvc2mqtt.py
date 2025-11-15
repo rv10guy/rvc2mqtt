@@ -7,6 +7,13 @@ import ruamel.yaml as yaml
 from datetime import datetime
 from ha_discovery import HADiscovery
 
+# Phase 2: Bidirectional Control
+from rvc_commands import RVCCommandEncoder
+from command_validator import CommandValidator
+from can_tx import CANTransmitter
+from audit_logger import AuditLogger
+from command_handler import CommandHandler
+
 config = configparser.ConfigParser(inline_comment_prefixes=';')
 config.read('rvc2mqtt.ini')
 debug_level = config.getint('General', 'debug')
@@ -29,6 +36,62 @@ ha_legacy_topics = config.getboolean('HomeAssistant', 'legacy_topics', fallback=
 last_msg_time = None
 ha_discovery = None  # Will be initialized if discovery is enabled
 
+# Phase 2 configuration
+commands_enabled = config.getboolean('Commands', 'enabled', fallback=False)
+if commands_enabled:
+    # Commands settings
+    cmd_source_address = config.getint('Commands', 'source_address', fallback=99)
+    cmd_retry_count = config.getint('Commands', 'retry_count', fallback=3)
+    cmd_retry_delay_ms = config.getint('Commands', 'retry_delay_ms', fallback=100)
+
+    # Rate limiting settings
+    rate_limit_enabled = config.getboolean('RateLimiting', 'enabled', fallback=True)
+    rate_limit_config = {
+        'rate_limit_enabled': rate_limit_enabled,
+        'global_commands_per_second': config.getint('RateLimiting', 'global_commands_per_second', fallback=10),
+        'entity_commands_per_second': config.getint('RateLimiting', 'entity_commands_per_second', fallback=2),
+        'entity_cooldown_ms': config.getint('RateLimiting', 'entity_cooldown_ms', fallback=500),
+    }
+
+    # Security settings
+    security_enabled = config.getboolean('Security', 'enabled', fallback=True)
+    allowlist_str = config.get('Security', 'allowlist', fallback='')
+    denylist_str = config.get('Security', 'denylist', fallback='')
+    allowed_commands_str = config.get('Security', 'allowed_commands', fallback='light,climate,switch')
+
+    security_config = {
+        'security_enabled': security_enabled,
+        'allowlist': [x.strip() for x in allowlist_str.split(',') if x.strip()],
+        'denylist': [x.strip() for x in denylist_str.split(',') if x.strip()],
+        'allowed_commands': [x.strip() for x in allowed_commands_str.split(',') if x.strip()],
+    }
+
+    # Audit logging settings
+    audit_enabled = config.getboolean('Audit', 'enabled', fallback=True)
+    audit_log_file = config.get('Audit', 'log_file', fallback='logs/command_audit.log')
+    audit_log_level_str = config.get('Audit', 'log_level', fallback='INFO')
+    audit_json_format = config.getboolean('Audit', 'json_format', fallback=True)
+    audit_max_bytes = config.getint('Audit', 'max_bytes', fallback=10485760)
+    audit_backup_count = config.getint('Audit', 'backup_count', fallback=5)
+
+    # Map log level string to constant
+    audit_log_levels = {
+        'DEBUG': AuditLogger.LEVEL_DEBUG,
+        'INFO': AuditLogger.LEVEL_INFO,
+        'WARNING': AuditLogger.LEVEL_WARNING,
+        'ERROR': AuditLogger.LEVEL_ERROR,
+        'CRITICAL': AuditLogger.LEVEL_CRITICAL,
+    }
+    audit_log_level = audit_log_levels.get(audit_log_level_str.upper(), AuditLogger.LEVEL_INFO)
+
+    # Merge rate limiting and security configs for validator
+    validator_config = {**rate_limit_config, **security_config}
+
+# Phase 2 global instances (will be initialized in main)
+command_handler = None
+can_transmitter = None
+audit_logger = None
+
 def signal_handler(signal, frame):
     global t
     print('')
@@ -42,18 +105,45 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
         print("MQTT Connected with code "+str(reason_code))
 #   client.subscribe("rvc/#")
 
+    # Phase 2: Subscribe to command topics
+    if commands_enabled:
+        if debug_level:
+            print("Subscribing to Phase 2 command topics...")
+        client.subscribe("rv/light/+/set")
+        client.subscribe("rv/light/+/brightness/set")
+        client.subscribe("rv/climate/+/mode/set")
+        client.subscribe("rv/climate/+/temperature/set")
+        client.subscribe("rv/climate/+/fan_mode/set")
+        client.subscribe("rv/switch/+/set")
+        if debug_level:
+            print("Phase 2 command subscriptions active")
+
 def on_mqtt_subscribe(client, userdata, mid, reason_code_list, properties):
     if debug_level:
         print("MQTT Sub: "+str(mid))
 
 def on_mqtt_message(client, userdata, msg):
     global last_msg_time
+    global command_handler
+
+    # Phase 2: Check if this is a command topic
+    if commands_enabled and command_handler and msg.topic.startswith('rv/'):
+        # Route to command handler
+        try:
+            payload_str = msg.payload.decode('utf-8')
+            command_handler.process_mqtt_command(msg.topic, payload_str)
+        except Exception as e:
+            if debug_level:
+                print(f"Error processing command: {e}")
+        return
+
+    # Legacy message handling (not a command topic)
     try:
         topic = msg.topic[13:]
         payload = json.loads(msg.payload)
         frames = payload.get("frame", [])
         num_frames = len(frames)
-            
+
         if debug_level:
             print(f"Send CAN ID: {topic}")
 
@@ -668,6 +758,67 @@ if __name__ == "__main__":
             except Exception as e:
                 print("Error loading HA Discovery mapping: {}".format(e))
                 ha_discovery = None
+
+        # Phase 2: Initialize bidirectional control components
+        if commands_enabled:
+            print("\nInitializing Phase 2: Bidirectional Control...")
+
+            # Initialize audit logger
+            if audit_enabled:
+                audit_logger = AuditLogger(
+                    log_file=audit_log_file,
+                    log_level=audit_log_level,
+                    json_format=audit_json_format,
+                    max_bytes=audit_max_bytes,
+                    backup_count=audit_backup_count,
+                    console_output=(debug_level > 1)
+                )
+                print(f"  Audit logging: {audit_log_file}")
+            else:
+                audit_logger = None
+
+            # Initialize CAN transmitter
+            can_transmitter = CANTransmitter(
+                can_interface='slcan',
+                can_port=f'socket://{canbus}',
+                retry_count=cmd_retry_count,
+                retry_delay_ms=cmd_retry_delay_ms,
+                debug_level=debug_level
+            )
+            print(f"  CAN TX: socket://{canbus}")
+
+            # Initialize RV-C command encoder
+            encoder = RVCCommandEncoder(source_address=cmd_source_address)
+            print(f"  Encoder: Source address {cmd_source_address}")
+
+            # Initialize command validator
+            validator = CommandValidator(
+                ha_discovery=ha_discovery,
+                config=validator_config
+            )
+            print(f"  Validator: Security={security_enabled}, Rate limiting={rate_limit_enabled}")
+
+            # Initialize command handler
+            command_handler = CommandHandler(
+                encoder=encoder,
+                validator=validator,
+                transmitter=can_transmitter,
+                audit_logger=audit_logger if audit_enabled else AuditLogger(log_file='/dev/null', console_output=False),
+                ha_discovery=ha_discovery,
+                mqtt_client=mqttc,
+                debug_level=debug_level
+            )
+            print("  Command handler: Ready")
+
+            # Connect CAN transmitter
+            success, error = can_transmitter.connect()
+            if success:
+                print("  CAN TX: Connected")
+            else:
+                print(f"  CAN TX: Failed to connect - {error}")
+                print("  WARNING: Commands will fail until CAN bus is available")
+
+            print("Phase 2 initialization complete\n")
 
         try:
             print("Connecting to MQTT: {0:s}".format(mqttBroker))
