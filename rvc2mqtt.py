@@ -2,6 +2,7 @@
 
 import argparse, array, can, json, os, queue, re, signal, threading, time, sys, serial, time, configparser
 import paho.mqtt.client as mqtt
+from paho.mqtt.client import CallbackAPIVersion
 import ruamel.yaml as yaml
 from datetime import datetime
 
@@ -27,12 +28,12 @@ def signal_handler(signal, frame):
     t.kill_received = True
     exit(0)
 
-def on_mqtt_connect(client, userdata, flags, rc):
+def on_mqtt_connect(client, userdata, flags, reason_code, properties):
     if debug_level:
-        print("MQTT Connected with code "+str(rc))
-#   client.subscribe("rvc/#")   
+        print("MQTT Connected with code "+str(reason_code))
+#   client.subscribe("rvc/#")
 
-def on_mqtt_subscribe(client, userdata, mid, granted_qos):
+def on_mqtt_subscribe(client, userdata, mid, reason_code_list, properties):
     if debug_level:
         print("MQTT Sub: "+str(mid))
 
@@ -58,7 +59,7 @@ def on_mqtt_message(client, userdata, msg):
     except Exception as e:
         print(f"Error in processing message: {e}")
 
-def on_mqtt_publish(client, userdata, mid):
+def on_mqtt_publish(client, userdata, mid, reason_code, properties):
     if debug_level:
         print("MQTT Published: " + str(mid))
 
@@ -94,7 +95,7 @@ class TCP_CANWatcher(threading.Thread):
         while not self.kill_received:
             if not connected:
                 try:
-                    bus = can.interface.Bus(bustype='slcan',
+                    bus = can.interface.Bus(interface='slcan',
                                             channel='socket://' + canbus,
                                             rtscts=True,
                                             bitrate=250000)
@@ -515,7 +516,7 @@ def main():
                         mqtt_safe_publish(mqttc, newtopic, payload, retain)
 
     def mainLoop():
-        client = mqtt.Client()
+        client = mqtt.Client(CallbackAPIVersion.VERSION2)
         client.username_pw_set(mqttUser, mqttPass)  # Add this line with your MQTT broker credentials
         client.on_connect = on_mqtt_connect
         client.on_subscribe = on_mqtt_subscribe
@@ -538,7 +539,7 @@ if __name__ == "__main__":
 
 
     if mqttOut:
-        mqttc = mqtt.Client() #create new instance
+        mqttc = mqtt.Client(CallbackAPIVersion.VERSION2) #create new instance
         mqttc.username_pw_set("hassio", "hassio")  # Add this line with your MQTT broker credentials
         mqttc.on_connect = on_mqtt_connect
         mqttc.on_subscribe = on_mqtt_subscribe
@@ -554,7 +555,8 @@ if __name__ == "__main__":
     print("Loading RVC Spec file {}.".format(specfile))
     with open(specfile,'r') as specfile:
         try:
-            spec=yaml.round_trip_load(specfile)
+            yaml_loader = yaml.YAML()
+            spec = yaml_loader.load(specfile)
         except yaml.YAMLError as err:
             print(err)
             exit(1)

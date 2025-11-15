@@ -1,0 +1,18 @@
+# RVC to MQTT Bridge Configuration
+# Copy this file to rvc2mqtt.ini and adjust the settings for your setup
+
+[General]
+debug = 0                       ; Debug level, 0=none, 1=errors, 2=errors+warnings, 3=errors+warnings+info
+parameterized_strings = 0       ; Send parameterized strings to mqtt (0=no, 1=yes)
+screenout = 0                   ; Output level, 0=none, 1=Dump parsed messages to console
+specfile = rvc-spec.yml         ; RV-C specification file path
+
+[MQTT]
+mqttBroker = 192.168.1.100    ; MQTT broker IP address or hostname
+mqttOut = 2                   ; Send to MQTT: 0=off, 1=Publish (no retain), 2=Publish with retain
+mqttUser = username           ; MQTT username
+mqttPass = password           ; MQTT password
+mqttOutputTopic = RVC2        ; Base MQTT topic to publish to
+
+[CAN]
+CANport = 192.168.1.200:3333  ; CAN bus interface IP address and port (format: IP:PORT)

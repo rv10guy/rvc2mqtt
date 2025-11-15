@@ -1,0 +1,14 @@
+# RVC to MQTT Bridge - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# CAN bus interface library
+python-can>=4.2.0
+
+# MQTT client library
+paho-mqtt>=2.0.0
+
+# YAML parser for RVC specification file
+ruamel.yaml>=0.17.0
+
+# Serial communication (required by python-can for socket/serial connections)
+pyserial>=3.5
