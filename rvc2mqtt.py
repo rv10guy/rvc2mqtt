@@ -621,15 +621,8 @@ def main():
                             mqtt_safe_publish(mqttc, newtopic, payload, retain)
 
     def mainLoop():
-        client = mqtt.Client(CallbackAPIVersion.VERSION2)
-        client.username_pw_set(mqttUser, mqttPass)  # Add this line with your MQTT broker credentials
-        client.on_connect = on_mqtt_connect
-        client.on_subscribe = on_mqtt_subscribe
-        client.on_message = on_mqtt_message
-        client.on_publish = on_mqtt_publish
-        client.connect(mqttBroker, 1883, 60)
-
-        client.loop_start()
+        # Use the global mqttc client instead of creating a new one
+        mqttc.loop_start()
         try:
             while True:
                 get_json_line()
@@ -637,7 +630,7 @@ def main():
         except KeyboardInterrupt:
             print("Interrupted by user, stopping.")
         finally:
-            client.loop_stop()
+            mqttc.loop_stop()
     mainLoop()
 
 if __name__ == "__main__":
