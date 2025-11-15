@@ -1,0 +1,124 @@
+# Custom RV-C to Home Assistant Entity Mapping Template
+#
+# Copy this file and customize it for your RV.
+# Usage:
+#   1. cp custom_template.yaml my_rv_custom.yaml
+#   2. Edit my_rv_custom.yaml to match your RV's configuration
+#   3. Set mapping_file=mappings/my_rv_custom.yaml in rvc2mqtt.ini
+#
+# Documentation: See docs/TOPIC_SCHEMA_DESIGN.md for details
+
+metadata:
+  name: "My Custom RV Mapping"
+  manufacturer: "Your RV Manufacturer"
+  model: "Your RV Model"
+  version: "1.0"
+  description: "Custom mapping for my specific RV configuration"
+
+settings:
+  state_topic_prefix: "rv"     # MQTT topic prefix for state messages
+  device_id_prefix: "rv"       # Device ID prefix (use if you have multiple RVs)
+  sw_version: "2.0.0"          # Software version
+
+# Define your devices (logical groupings of entities)
+devices:
+  power:
+    identifier: "power"
+    name: "RV Power Systems"
+    model: "DC/AC Power"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  tanks:
+    identifier: "tanks"
+    name: "RV Tank Monitoring"
+    model: "Tanks"
+    manufacturer: "RV-C"
+    suggested_area: "RV"
+
+  # Add more devices as needed...
+
+# Map RV-C messages to Home Assistant entities
+entities:
+  # Example: Tank Sensor
+  # Find the instance number by watching RVC2/* topics in MQTT Explorer
+  - rvc_message: "TANK_STATUS"         # RV-C message name from rvc-spec.yml
+    instance: 0                        # Instance number (0, 1, 2, etc.)
+    entity_type: "sensor"              # HA entity type (sensor, binary_sensor, light, switch, climate)
+    entity_id: "tank_fresh_0"          # Unique ID for this entity
+    name: "Fresh Water Tank"           # Name shown in Home Assistant
+    device: "tanks"                    # Which device this belongs to
+    device_class: null                 # HA device class (volume, voltage, temperature, etc.)
+    unit_of_measurement: "%"           # Unit to display
+    icon: "mdi:water"                  # Icon from materialdesignicons.com
+    state_class: "measurement"         # HA state class (measurement, total, total_increasing)
+    value_template: "int(round(value['relative_level'] / value['resolution'] * 100, 0))"  # How to calculate value
+
+  # Example: Battery Voltage Sensor
+  - rvc_message: "DC_SOURCE_STATUS_1"
+    instance: 1
+    entity_type: "sensor"
+    entity_id: "battery_house"
+    name: "House Battery Voltage"
+    device: "power"
+    device_class: "voltage"
+    unit_of_measurement: "V"
+    icon: "mdi:battery"
+    state_class: "measurement"
+    value_template: "value['dc voltage']"  # Extract specific field from decoded message
+
+  # Example: Light
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 1                        # Find your light's instance number
+    entity_type: "light"
+    entity_id: "light_ceiling"
+    name: "Ceiling Light"
+    device: "lighting"
+    icon: "mdi:ceiling-light"
+    supports_brightness: true          # Set to false for on/off only
+    state_field: "load status"         # Which field indicates on/off
+
+  # Example: Switch (pump, heater, etc.)
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 93
+    entity_type: "switch"
+    entity_id: "pump_water"
+    name: "Water Pump"
+    device: "systems"
+    icon: "mdi:pump"
+    state_field: "load status"
+
+  # Add your entities here...
+
+# Special rules for complex mappings
+special_rules: []
+
+# TIPS:
+#
+# 1. Finding Instance Numbers:
+#    - Watch MQTT topics like RVC2/DC_DIMMER_STATUS_3/X where X is the instance
+#    - Toggle lights/switches in your RV and see which instance changes
+#
+# 2. Finding Field Names:
+#    - Look at the JSON payload on RVC2/* topics
+#    - Field names are defined in rvc-spec.yml
+#
+# 3. Value Templates:
+#    - Simple field extraction: "value['field_name']"
+#    - Calculations: "round(value['field_name'] * 2, 1)"
+#    - Conditionals can use Python expressions
+#
+# 4. Device Classes:
+#    - sensor: voltage, current, temperature, humidity, battery, power, energy, etc.
+#    - binary_sensor: running, opening, door, window, motion, etc.
+#    - Full list: https://www.home-assistant.io/integrations/sensor/#device-class
+#
+# 5. Icons:
+#    - Browse icons at: https://materialdesignicons.com/
+#    - Format: "mdi:icon-name"
+#
+# 6. Testing:
+#    - Start with one entity and verify it works
+#    - Check Home Assistant Configuration -> Devices
+#    - Look for your device and entities
+#    - Gradually add more entities

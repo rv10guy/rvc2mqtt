@@ -16,3 +16,9 @@ mqttOutputTopic = RVC2        ; Base MQTT topic to publish to
 
 [CAN]
 CANport = 192.168.1.200:3333  ; CAN bus interface IP address and port (format: IP:PORT)
+
+[HomeAssistant]
+discovery_enabled = 1                        ; Enable HA MQTT Discovery (0=disabled, 1=enabled)
+discovery_prefix = homeassistant             ; HA discovery prefix (usually 'homeassistant')
+mapping_file = mappings/tiffin_default.yaml  ; Entity mapping configuration file
+legacy_topics = 1                            ; Keep publishing old RVC2/* topics (0=no, 1=yes)
