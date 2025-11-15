@@ -160,6 +160,13 @@ class HADiscovery:
         if entity.get('icon'):
             payload['icon'] = entity['icon']
 
+        # Add display precision (configurable or auto-set for voltage)
+        if entity.get('suggested_display_precision') is not None:
+            payload['suggested_display_precision'] = entity['suggested_display_precision']
+        elif entity.get('device_class') == 'voltage':
+            # Default to 1 decimal place for voltage sensors
+            payload['suggested_display_precision'] = 1
+
         # Add device info
         if entity.get('device') and entity['device'] in self.devices:
             payload['device'] = self.devices[entity['device']]
@@ -197,11 +204,13 @@ class HADiscovery:
     def _generate_light_discovery(self, entity, unique_id):
         """Generate discovery payload for light entity"""
         state_topic = f"{self.state_topic_prefix}/light/{entity['entity_id']}/state"
+        command_topic = f"{self.state_topic_prefix}/light/{entity['entity_id']}/set"
 
         payload = {
             "name": entity['name'],
             "unique_id": unique_id,
             "state_topic": state_topic,
+            "command_topic": command_topic,
             "payload_on": "ON",
             "payload_off": "OFF",
             "availability_topic": f"{self.state_topic_prefix}/status",
@@ -212,7 +221,9 @@ class HADiscovery:
         # Add brightness support if specified
         if entity.get('supports_brightness', False):
             brightness_topic = f"{self.state_topic_prefix}/light/{entity['entity_id']}/brightness"
+            brightness_command_topic = f"{self.state_topic_prefix}/light/{entity['entity_id']}/brightness/set"
             payload['brightness_state_topic'] = brightness_topic
+            payload['brightness_command_topic'] = brightness_command_topic
             payload['brightness_scale'] = 100
 
         # Add optional fields

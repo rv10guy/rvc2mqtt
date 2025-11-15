@@ -165,13 +165,14 @@ def publish_ha_state(mqttc, dgn, instance, decoded_data, retain):
 
     for entity in entities:
         try:
+            entity_type = entity['entity_type']
+
             # Extract value based on entity configuration
+            # (climate entities don't need a single value, they have multiple fields)
             value = ha_discovery.extract_value(entity, decoded_data)
 
-            if value is None:
+            if value is None and entity_type != 'climate':
                 continue
-
-            entity_type = entity['entity_type']
 
             if entity_type == 'sensor' or entity_type == 'binary_sensor':
                 # Simple sensors: publish single value
@@ -212,18 +213,28 @@ def publish_ha_state(mqttc, dgn, instance, decoded_data, retain):
                 # Climate: publish multiple topics
                 topics = ha_discovery.get_climate_topics(entity)
 
+                if debug_level > 0:
+                    print(f"Climate entity {entity.get('entity_id')}: decoded_data keys = {list(decoded_data.keys())}")
+
                 # Mode
-                mode_value = decoded_data.get(entity.get('mode_field', 'operating mode definition'))
+                mode_field = entity.get('mode_field', 'operating mode definition')
+                mode_value = decoded_data.get(mode_field)
+                if debug_level > 0:
+                    print(f"  Mode field '{mode_field}' = {mode_value}")
                 if mode_value:
                     mqttc.publish(topics['mode'], str(mode_value).lower(), retain=retain)
+                    if debug_level > 0:
+                        print(f"  Published mode: {topics['mode']} = {mode_value}")
 
                 # Setpoint temperature
-                setpoint_value = decoded_data.get(entity.get('setpoint_field', 'setpoint temp cool F'))
+                setpoint_field = entity.get('setpoint_field', 'setpoint temp cool F')
+                setpoint_value = decoded_data.get(setpoint_field)
                 if setpoint_value and setpoint_value != 'n/a':
                     mqttc.publish(topics['setpoint'], str(int(round(setpoint_value))), retain=retain)
 
                 # Fan mode
-                fan_value = decoded_data.get(entity.get('fan_mode_field', 'fan mode definition'))
+                fan_field = entity.get('fan_mode_field', 'fan mode definition')
+                fan_value = decoded_data.get(fan_field)
                 if fan_value:
                     mqttc.publish(topics['fan'], str(fan_value).lower(), retain=retain)
 
@@ -577,7 +588,7 @@ def main():
         data = frame['data']
         
         if debug_level > 0:
-            print("{0:f} {1:X} ({2:X}) ".format(arbitration_id, dlc), end='', flush=True)
+            print("{0:X} DLC:{1:d} ".format(arbitration_id, dlc), end='', flush=True)
 
         try:
             canID = "{0:b}".format(arbitration_id)
@@ -670,6 +681,16 @@ if __name__ == "__main__":
                 # Publish online status
                 availability_topic = "{}/status".format(ha_discovery.state_topic_prefix)
                 mqttc.publish(availability_topic, "online", retain=True, qos=1)
+
+                # Publish initial OFF state for all lights
+                # (lights that are off don't send CAN bus messages, so we initialize them as OFF)
+                for entity in ha_discovery.entities:
+                    if entity['entity_type'] == 'light':
+                        state_topic = ha_discovery.get_state_topic(entity)
+                        mqttc.publish(state_topic, "OFF", retain=True, qos=1)
+                        if debug_level > 0:
+                            print(f"  Initialized {entity['entity_id']} to OFF")
+
                 print("HA MQTT Discovery complete - entities should appear in Home Assistant")
 
         except:

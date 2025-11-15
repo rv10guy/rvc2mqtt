@@ -11,7 +11,10 @@ This tool reads messages from an RV's CAN bus network, decodes them using the RV
 - **Real-time CAN Bus Monitoring**: Connects to CAN bus via TCP/IP using SLCAN protocol
 - **RV-C Protocol Decoding**: Interprets RV-C messages using a YAML specification file
 - **MQTT Publishing**: Sends decoded data to MQTT topics for easy integration
-- **Custom Device Mappings**: Includes specialized processing for Tiffin motorhomes (lights, HVAC, tanks, generators, etc.)
+- **Home Assistant MQTT Discovery**: Zero-configuration auto-discovery of all devices and sensors in Home Assistant
+- **Intelligent Device Grouping**: Entities organized into logical devices (HVAC zones, power systems, tanks, etc.)
+- **Multi-Entity Type Support**: Sensors, binary sensors, climate controls, lights, and more
+- **Custom Device Mappings**: Configurable entity mappings via YAML files for different RV models
 - **Auto-Reconnection**: Automatically reconnects to CAN bus if connection is lost
 - **Timestamping**: Publishes timestamps of last received messages
 - **Configurable Output**: Flexible debug levels and output modes
@@ -70,6 +73,12 @@ mqttOutputTopic = RVC2          # Base MQTT topic for publishing
 
 [CAN]
 CANport = 192.168.1.200:3333    # CAN bus interface IP:port
+
+[HomeAssistant]
+discovery_enabled = 1                        # Enable HA MQTT Discovery (0=disabled, 1=enabled)
+discovery_prefix = homeassistant             # HA discovery prefix (usually 'homeassistant')
+mapping_file = mappings/tiffin_default.yaml  # Entity mapping configuration file
+legacy_topics = 1                            # Keep publishing old RVC2/* topics (0=no, 1=yes)
 ```
 
 ### Configuration Options
@@ -98,37 +107,59 @@ The script will:
 
 ### MQTT Topic Structure
 
+#### Legacy RV-C Topics (for debugging and raw data access)
+
 Messages are published to topics in the format:
 ```
 {mqttOutputTopic}/{MESSAGE_NAME}/{instance}
 ```
 
 For example:
-- `RVC2/DC_SOURCE_STATUS_1/1` - House battery voltage
-- `RVC2/TANK_STATUS/0` - Fresh water tank level
-- `RVC2/THERMOSTAT_AMBIENT_STATUS/0` - Front HVAC temperature
+- `RVC2/DC_SOURCE_STATUS_1/1` - House battery voltage (raw)
+- `RVC2/TANK_STATUS/0` - Fresh water tank level (raw)
+- `RVC2/THERMOSTAT_AMBIENT_STATUS/0` - Front HVAC temperature (raw)
 
-### Custom Tiffin Mappings
+#### Home Assistant Discovery Topics
 
-The script includes custom processing for Tiffin motorhomes that maps RV-C messages to more user-friendly topics:
+When Home Assistant MQTT Discovery is enabled, entities are published to friendly topics:
 
-- `OpenRoad/light/ceiling/state` - Ceiling light status
-- `OpenRoad/battery/house` - House battery voltage
-- `OpenRoad/Tank/Fresh` - Fresh water tank percentage
-- `OpenRoad/HVAC/front/state/temperature` - Front zone temperature
-- And many more...
+**State Topics:**
+- `rv/sensor/{entity_id}/state` - Sensor values (temperature, voltage, tank levels, etc.)
+- `rv/binary_sensor/{entity_id}/state` - Binary sensors (ON/OFF states)
+- `rv/climate/{entity_id}/mode` - Climate control mode
+- `rv/climate/{entity_id}/setpoint` - Climate control setpoint temperature
+- `rv/climate/{entity_id}/fan` - Climate fan mode
+- `rv/light/{entity_id}/state` - Light state (ON/OFF)
+- `rv/light/{entity_id}/brightness` - Light brightness (if supported)
+
+**Discovery Topics:**
+- `homeassistant/{entity_type}/{entity_id}/config` - Auto-discovery configuration messages
+
+**Examples:**
+- `rv/sensor/battery_house/state` - House battery voltage
+- `rv/sensor/tank_fresh_0/state` - Fresh water tank percentage
+- `rv/climate/hvac_front/mode` - Front HVAC operating mode
+- `rv/light/light_ceiling/state` - Ceiling light state
 
 ## Project Structure
 
 ```
 rvc2mqtt/
-├── rvc2mqtt.py           # Main application script
-├── rvc2mqtt.ini          # Configuration file
-├── rvc-spec.yml          # RV-C protocol specification
-├── mqttlog.py            # MQTT logging utility
-├── requirements.txt      # Python dependencies
-├── README.md             # This file
-└── .gitignore            # Git ignore rules
+├── rvc2mqtt.py                      # Main application script
+├── rvc2mqtt.ini                     # Configuration file
+├── ha_discovery.py                  # Home Assistant MQTT Discovery module
+├── rvc-spec.yml                     # RV-C protocol specification
+├── mqttlog.py                       # MQTT logging utility
+├── requirements.txt                 # Python dependencies
+├── mappings/                        # Entity mapping configurations
+│   ├── tiffin_default.yaml          # Default Tiffin motorhome mapping
+│   └── custom_template.yaml         # Template for custom mappings
+├── docs/                            # Documentation
+│   ├── TOPIC_SCHEMA_DESIGN.md       # MQTT topic schema design
+│   └── HA_DISCOVERY_RESEARCH.md     # Home Assistant discovery research
+├── PHASE1_PLAN.md                   # Phase 1 development plan (COMPLETED)
+├── README.md                        # This file
+└── .gitignore                       # Git ignore rules
 ```
 
 ## Utilities
@@ -159,18 +190,58 @@ If you see "No route to host" or connection errors:
 2. Check MQTT credentials in `rvc2mqtt.ini`
 3. Test MQTT connection manually using `mosquitto_pub`/`mosquitto_sub`
 
+## Home Assistant Integration
+
+### Automatic Discovery
+
+With Home Assistant MQTT Discovery enabled (default), all RV devices and sensors will automatically appear in Home Assistant with **zero configuration required**. Simply:
+
+1. Ensure your MQTT broker is configured in Home Assistant
+2. Start `rvc2mqtt.py`
+3. Wait a few seconds for discovery messages to be published
+4. Check Home Assistant - all entities will appear under the "MQTT" integration
+
+### Supported Entity Types
+
+- **Sensors**: Battery voltage, tank levels, temperatures, generator status
+- **Binary Sensors**: Door/window states, system statuses
+- **Climate**: HVAC thermostats with mode, setpoint, and fan control
+- **Lights**: Interior and exterior lighting with state tracking
+
+### Device Organization
+
+Entities are automatically grouped into logical devices:
+- **HVAC Front Zone** - Front climate control and temperature
+- **HVAC Rear Zone** - Rear climate control and temperature
+- **RV Power Systems** - Battery voltages and power sources
+- **RV Systems** - Generator and other system statuses
+- **RV Tank Monitoring** - Fresh, gray, black water and propane levels
+- **RV Ventilation** - Vent fan controls
+- **RV Lighting** - All interior and exterior lights
+
+### Custom Mappings
+
+To create a custom mapping for your RV:
+
+1. Copy `mappings/custom_template.yaml`
+2. Edit the file to match your RV's specific configuration
+3. Update `rvc2mqtt.ini` to point to your custom mapping file
+4. Restart `rvc2mqtt.py`
+
+See `docs/TOPIC_SCHEMA_DESIGN.md` for detailed mapping documentation.
+
 ## Known Limitations
 
 - Currently **one-way only**: CAN bus → MQTT (no MQTT → CAN bus control)
-- Code includes framework for two-way communication (currently disabled)
+- Phase 2 will add bidirectional control (lights, climate, etc.)
 
 ## Future Enhancements
 
-- [ ] Enable two-way MQTT to CAN bus communication
-- [ ] Add Home Assistant MQTT discovery
+- [ ] Enable two-way MQTT to CAN bus communication (Phase 2)
+- [x] Add Home Assistant MQTT discovery (✅ Phase 1 Complete)
 - [ ] Docker container support
 - [ ] Web-based configuration interface
-- [ ] Support for additional RV manufacturers
+- [ ] Support for additional RV manufacturers (custom mapping templates available)
 
 ## Contributing
 
