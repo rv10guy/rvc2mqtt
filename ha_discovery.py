@@ -239,11 +239,13 @@ class HADiscovery:
     def _generate_switch_discovery(self, entity, unique_id):
         """Generate discovery payload for switch entity"""
         state_topic = f"{self.state_topic_prefix}/switch/{entity['entity_id']}/state"
+        command_topic = f"{self.state_topic_prefix}/switch/{entity['entity_id']}/set"
 
         payload = {
             "name": entity['name'],
             "unique_id": unique_id,
             "state_topic": state_topic,
+            "command_topic": command_topic,
             "payload_on": "ON",
             "payload_off": "OFF",
             "availability_topic": f"{self.state_topic_prefix}/status",
@@ -272,9 +274,12 @@ class HADiscovery:
             "name": entity['name'],
             "unique_id": unique_id,
             "mode_state_topic": f"{base_topic}/mode",
+            "mode_command_topic": f"{base_topic}/mode/set",
             "temperature_state_topic": f"{base_topic}/setpoint",
+            "temperature_command_topic": f"{base_topic}/temperature/set",
             "current_temperature_topic": f"{base_topic}/temperature",
             "fan_mode_state_topic": f"{base_topic}/fan",
+            "fan_mode_command_topic": f"{base_topic}/fan_mode/set",
             "availability_topic": f"{self.state_topic_prefix}/status",
             "payload_available": "online",
             "payload_not_available": "offline"
