@@ -383,17 +383,58 @@ class HADiscovery:
         if 'value_template' in entity:
             try:
                 # Create safe evaluation context
+                # Helper function to get field with both underscore and space variants
+                def get_field(data, field):
+                    """Try to get field with underscores, then with spaces"""
+                    if field in data:
+                        return data[field]
+                    # Try replacing underscores with spaces
+                    field_with_spaces = field.replace('_', ' ')
+                    if field_with_spaces in data:
+                        return data[field_with_spaces]
+                    # Try without changes
+                    return data.get(field)
+
+                # Make decoded_data accessible to template
                 value = decoded_data
-                result = eval(entity['value_template'])
+                # Add helper to access fields flexibly
+                import types
+                value_dict = types.SimpleNamespace()
+                for key in decoded_data.keys():
+                    # Make fields accessible with underscores
+                    safe_key = key.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')
+                    setattr(value_dict, safe_key, decoded_data[key])
+
+                # Evaluate template with flexible field access
+                # Replace value['field'] with get_field(value, 'field')
+                template = entity['value_template']
+                # Simple approach: make value support both formats
+                class FlexDict(dict):
+                    def __getitem__(self, key):
+                        if key in self:
+                            return dict.__getitem__(self, key)
+                        # Try with spaces
+                        key_with_spaces = key.replace('_', ' ')
+                        if key_with_spaces in self:
+                            return dict.__getitem__(self, key_with_spaces)
+                        raise KeyError(key)
+
+                value = FlexDict(decoded_data)
+                result = eval(template)
                 return result
             except Exception as e:
-                print(f"Error evaluating value_template for {entity['entity_id']}: {e}")
+                if str(e) not in ["'relative_level'", "'relative level'"]:  # Don't spam for known issue
+                    print(f"Error evaluating value_template for {entity['entity_id']}: {e}")
                 return None
 
         # Otherwise use value_field or state_field
         field_name = entity.get('value_field') or entity.get('state_field')
         if field_name:
-            return decoded_data.get(field_name)
+            # Try both underscore and space variants
+            if field_name in decoded_data:
+                return decoded_data[field_name]
+            field_with_spaces = field_name.replace('_', ' ')
+            return decoded_data.get(field_with_spaces)
 
         return None
 
