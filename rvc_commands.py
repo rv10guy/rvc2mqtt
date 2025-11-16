@@ -146,13 +146,13 @@ class RVCCommandEncoder:
         can_id = self.build_can_id(self.DGN_DC_DIMMER)
 
         if turn_on:
-            # On command: Set brightness to 100%
+            # On command: Use ON_DELAY instead of SET_LEVEL to avoid cleanup sequence
             brightness = 200  # 100% = 200 in RV-C
-            command = self.CMD_SET_LEVEL
+            command = self.CMD_ON_DELAY  # Command 2 - simpler than SET_LEVEL
         else:
-            # Off command: Set brightness to 0%
+            # Off command: Use OFF_DELAY
             brightness = 0
-            command = self.CMD_OFF_DELAY
+            command = self.CMD_OFF_DELAY  # Command 3
             duration = 0  # Immediate
 
         # Build data frame
@@ -169,9 +169,7 @@ class RVCCommandEncoder:
 
         frames = [(can_id, data, 0)]
 
-        # For ON command with set level, add cleanup sequence
-        if turn_on and command == self.CMD_SET_LEVEL:
-            frames.extend(self._build_dimmer_cleanup_sequence(instance, can_id))
+        # No cleanup sequence needed for ON_DELAY/OFF_DELAY commands
 
         return frames
 
@@ -196,12 +194,12 @@ class RVCCommandEncoder:
 
         can_id = self.build_can_id(self.DGN_DC_DIMMER)
 
-        # Build set level command
+        # Build set level command (no cleanup needed for simple brightness changes)
         data = [
             instance,
             0xFF,
             brightness_rvc,
-            self.CMD_SET_LEVEL,
+            self.CMD_SET_LEVEL,  # Command 0 is appropriate for setting specific brightness
             255,  # Duration: indefinite
             0x00,
             0xFF,
@@ -210,8 +208,7 @@ class RVCCommandEncoder:
 
         frames = [(can_id, data, 0)]
 
-        # Add cleanup sequence
-        frames.extend(self._build_dimmer_cleanup_sequence(instance, can_id))
+        # No cleanup sequence - keep it simple
 
         return frames
 

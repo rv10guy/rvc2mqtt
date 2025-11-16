@@ -25,8 +25,9 @@ class CANTransmitter:
     """
 
     def __init__(self,
-                 can_interface: str,
-                 can_port: str,
+                 can_interface: str = None,
+                 can_port: str = None,
+                 bus: can.interface.Bus = None,
                  retry_count: int = 3,
                  retry_delay_ms: int = 100,
                  debug_level: int = 0):
@@ -34,8 +35,9 @@ class CANTransmitter:
         Initialize CAN transmitter
 
         Args:
-            can_interface: CAN interface type (e.g., 'slcan')
-            can_port: CAN port (e.g., 'socket://192.168.50.103:3333')
+            can_interface: CAN interface type (e.g., 'slcan') - ignored if bus provided
+            can_port: CAN port (e.g., 'socket://192.168.50.103:3333') - ignored if bus provided
+            bus: Existing CAN bus object to use (if provided, no new connection created)
             retry_count: Number of retries for failed transmissions
             retry_delay_ms: Delay between retries in milliseconds
             debug_level: Debug output level (0=none, 1=errors, 2=all)
@@ -46,8 +48,11 @@ class CANTransmitter:
         self.retry_delay_ms = retry_delay_ms
         self.debug_level = debug_level
 
-        self.bus = None
-        self.connected = False
+        # Use provided bus object or create our own later
+        self.bus = bus
+        self.connected = (bus is not None)
+        self.owns_bus = (bus is None)  # Track if we created the bus
+
         self.stats = {
             'frames_sent': 0,
             'frames_failed': 0,
@@ -63,11 +68,18 @@ class CANTransmitter:
         Returns:
             (success, error_message)
         """
+        # If we already have a bus object, we're connected
+        if self.bus is not None:
+            self.connected = True
+            if self.debug_level > 0:
+                print(f"CAN TX: Using shared CAN bus")
+            return True, None
+
+        # Create our own connection
         try:
             self.bus = can.interface.Bus(
                 interface=self.can_interface,
                 channel=self.can_port,
-                rtscts=True,
                 bitrate=250000
             )
             self.connected = True
@@ -98,8 +110,8 @@ class CANTransmitter:
             return False, error_msg
 
     def disconnect(self):
-        """Disconnect from CAN bus"""
-        if self.bus and self.connected:
+        """Disconnect from CAN bus (only if we own it)"""
+        if self.bus and self.connected and self.owns_bus:
             try:
                 self.bus.shutdown()
                 self.connected = False

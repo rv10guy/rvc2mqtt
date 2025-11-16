@@ -17,7 +17,7 @@ from command_handler import CommandHandler
 config = configparser.ConfigParser(inline_comment_prefixes=';')
 config.read('rvc2mqtt.ini')
 debug_level = config.getint('General', 'debug')
-parameterized_strings = config.getboolean('General', 'parameterized_strings')
+parameterized_strings = bool(config.getint('General', 'parameterized_strings'))
 screenOut = config.getint('General', 'screenout')
 specfile = config.get('General', 'specfile')
 mqttBroker = config.get('MQTT', 'mqttBroker')
@@ -28,16 +28,17 @@ mqttOutputTopic = config.get('MQTT', 'mqttOutputTopic')
 canbus = config.get('CAN', 'CANport')
 
 # Home Assistant Discovery settings
-ha_discovery_enabled = config.getboolean('HomeAssistant', 'discovery_enabled', fallback=False)
+ha_discovery_enabled = bool(config.getint('HomeAssistant', 'discovery_enabled', fallback=0))
 ha_discovery_prefix = config.get('HomeAssistant', 'discovery_prefix', fallback='homeassistant')
 ha_mapping_file = config.get('HomeAssistant', 'mapping_file', fallback='mappings/tiffin_default.yaml')
-ha_legacy_topics = config.getboolean('HomeAssistant', 'legacy_topics', fallback=True)
+ha_legacy_topics = bool(config.getint('HomeAssistant', 'legacy_topics', fallback=1))
 
 last_msg_time = None
 ha_discovery = None  # Will be initialized if discovery is enabled
+can_transmitter = None  # Phase 2: Will be initialized if commands are enabled
 
 # Phase 2 configuration
-commands_enabled = config.getboolean('Commands', 'enabled', fallback=False)
+commands_enabled = bool(config.getint('Commands', 'enabled', fallback=0))
 if commands_enabled:
     # Commands settings
     cmd_source_address = config.getint('Commands', 'source_address', fallback=99)
@@ -45,7 +46,7 @@ if commands_enabled:
     cmd_retry_delay_ms = config.getint('Commands', 'retry_delay_ms', fallback=100)
 
     # Rate limiting settings
-    rate_limit_enabled = config.getboolean('RateLimiting', 'enabled', fallback=True)
+    rate_limit_enabled = bool(config.getint('RateLimiting', 'enabled', fallback=1))
     rate_limit_config = {
         'rate_limit_enabled': rate_limit_enabled,
         'global_commands_per_second': config.getint('RateLimiting', 'global_commands_per_second', fallback=10),
@@ -54,7 +55,7 @@ if commands_enabled:
     }
 
     # Security settings
-    security_enabled = config.getboolean('Security', 'enabled', fallback=True)
+    security_enabled = bool(config.getint('Security', 'enabled', fallback=1))
     allowlist_str = config.get('Security', 'allowlist', fallback='')
     denylist_str = config.get('Security', 'denylist', fallback='')
     allowed_commands_str = config.get('Security', 'allowed_commands', fallback='light,climate,switch')
@@ -67,10 +68,10 @@ if commands_enabled:
     }
 
     # Audit logging settings
-    audit_enabled = config.getboolean('Audit', 'enabled', fallback=True)
+    audit_enabled = bool(config.getint('Audit', 'enabled', fallback=1))
     audit_log_file = config.get('Audit', 'log_file', fallback='logs/command_audit.log')
     audit_log_level_str = config.get('Audit', 'log_level', fallback='INFO')
-    audit_json_format = config.getboolean('Audit', 'json_format', fallback=True)
+    audit_json_format = bool(config.getint('Audit', 'json_format', fallback=1))
     audit_max_bytes = config.getint('Audit', 'max_bytes', fallback=10485760)
     audit_backup_count = config.getint('Audit', 'backup_count', fallback=5)
 
@@ -184,10 +185,11 @@ def on_mqtt_publish(client, userdata, mid, reason_code, properties):
 #        print("CAN Send Failed")
 
 class TCP_CANWatcher(threading.Thread):
-    def __init__(self, queue):
+    def __init__(self, queue, can_transmitter=None):
         threading.Thread.__init__(self)
         self.kill_received = False
         self.queue = queue
+        self.can_transmitter = can_transmitter
 
     def run(self):
         connected = False
@@ -196,10 +198,17 @@ class TCP_CANWatcher(threading.Thread):
                 try:
                     bus = can.interface.Bus(interface='slcan',
                                             channel='socket://' + canbus,
-                                            rtscts=True,
                                             bitrate=250000)
                     connected = True
                     print("Connected to the CANbus.")
+
+                    # Share the bus with CANTransmitter if provided
+                    if self.can_transmitter:
+                        self.can_transmitter.bus = bus
+                        self.can_transmitter.connected = True
+                        self.can_transmitter.owns_bus = False
+                        print("Shared CAN bus with Phase 2 transmitter.")
+
                 except serial.serialutil.SerialException as err:
                     print("Failed to connect to the CANbus. Retrying in 1 minute.")
                     time.sleep(60)
@@ -658,6 +667,7 @@ def process_Tiffin(topic, payload, previous_values):
 signal.signal(signal.SIGINT, signal_handler)
 
 def main():
+    global can_transmitter
     retain=False
     previous_values = {}
 
@@ -810,15 +820,17 @@ if __name__ == "__main__":
             )
             print("  Command handler: Ready")
 
-            # Connect CAN transmitter
-            success, error = can_transmitter.connect()
-            if success:
-                print("  CAN TX: Connected")
-            else:
-                print(f"  CAN TX: Failed to connect - {error}")
-                print("  WARNING: Commands will fail until CAN bus is available")
+            # NOTE: CAN transmitter will receive bus from TCP_CANWatcher thread
+            # to avoid creating duplicate connections
+            print("  CAN TX: Will share CAN bus with reader thread")
 
             print("Phase 2 initialization complete\n")
+
+        # Start CAN receive thread (after Phase 2 init so it can share the bus)
+        q = queue.Queue()
+        t = TCP_CANWatcher(q, can_transmitter)
+        t.start()
+        print("CAN receive thread started\n")
 
         try:
             print("Connecting to MQTT: {0:s}".format(mqttBroker))
@@ -857,9 +869,5 @@ if __name__ == "__main__":
             exit(1)
 
     print("Processing start...")
-
-    q = queue.Queue()
-    t = TCP_CANWatcher(q)	# Start CAN receive thread
-    t.start()
 
     main()
