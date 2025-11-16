@@ -44,17 +44,16 @@ COPY rvc2mqtt.ini .
 # Copy mappings directory
 COPY mappings/ ./mappings/
 
-# Create directories for logs and audit (will be volume mounted)
-RUN mkdir -p /app/logs /app/audit
-
 # Set timezone (can be overridden by environment variable)
 ENV TZ=America/New_York
 
 # Run as non-root user for security
-# Use UID 99 (nobody) to match Unraid's standard appdata user
-RUN useradd -m -u 99 rvc2mqtt && \
-    chown -R rvc2mqtt:rvc2mqtt /app
-USER rvc2mqtt
+# Use UID 99 and GID 100 (nobody:users) to match Unraid's standard appdata ownership
+# Creating directories and setting permissions for when running without volume mounts
+RUN mkdir -p /app/logs /app/audit && \
+    chmod -R 777 /app/logs /app/audit
+# Run as nobody:users (99:100) - Unraid standard
+USER 99:100
 
 # Health check (optional - check if process is running)
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
