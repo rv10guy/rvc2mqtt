@@ -89,7 +89,8 @@ class CommandValidator:
                 'state': {
                     'value_field': 'value',
                     'value_type': str,
-                    'allowed_values': ['ON', 'OFF'],
+                    # Support both vent fans (ON/OFF) and ceiling fans (LOW/HIGH/OFF)
+                    'allowed_values': ['ON', 'OFF', 'LOW', 'HIGH'],
                 }
             }
         },

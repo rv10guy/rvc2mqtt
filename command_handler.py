@@ -310,9 +310,17 @@ class CommandHandler:
                 return self.encoder.encode_switch_on_off(instance, turn_on)
 
             elif command_type == 'fan':
-                # Vent fan ON/OFF
-                turn_on = (value == 'ON')
-                return self.encoder.encode_vent_fan(instance, turn_on)
+                # Check if this is a ceiling fan (multi-speed) or vent fan (ON/OFF)
+                fan_id = self._get_fan_id(command['entity_id'])
+
+                if fan_id:
+                    # Ceiling fan - supports OFF/LOW/HIGH speeds
+                    speed = self._parse_fan_speed(value)
+                    return self.encoder.encode_ceiling_fan(fan_id, speed)
+                else:
+                    # Vent fan - simple ON/OFF toggle
+                    turn_on = (value == 'ON')
+                    return self.encoder.encode_vent_fan(instance, turn_on)
 
             elif command_type == 'cover':
                 # Vent lid - needs TWO instances (up motor and down motor)
@@ -387,6 +395,71 @@ class CommandHandler:
 
         # Not found or invalid
         return None
+
+    def _get_fan_id(self, entity_id: str) -> Optional[int]:
+        """
+        Get fan_id for ceiling fan (if applicable)
+
+        Args:
+            entity_id: Entity ID from HA
+
+        Returns:
+            fan_id (1 or 2) if ceiling fan, None if vent fan
+        """
+        if not self.ha_discovery:
+            return None
+
+        # Look up entity in HA discovery mapping
+        for entity in self.ha_discovery.entities:
+            if entity.get('entity_id') == entity_id:
+                return entity.get('fan_id')
+
+        return None
+
+    def _parse_fan_speed(self, value: Any) -> int:
+        """
+        Parse fan speed value to 0-2 range
+
+        Supports:
+        - Text: "off"/"low"/"high" (case-insensitive)
+        - Percentage: 0-100 → 0=off, 1-50=low, 51-100=high
+        - Direct: 0-2
+
+        Args:
+            value: Speed value (str, int, or float)
+
+        Returns:
+            Speed (0=OFF, 1=LOW, 2=HIGH)
+        """
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower in ['off', '0']:
+                return 0
+            elif value_lower in ['low', '1']:
+                return 1
+            elif value_lower in ['high', '2']:
+                return 2
+            else:
+                # Try to parse as number
+                try:
+                    value = int(value)
+                except ValueError:
+                    return 0  # Default to OFF if can't parse
+
+        # Handle numeric values
+        if isinstance(value, (int, float)):
+            if value == 0:
+                return 0
+            elif 1 <= value <= 50:
+                return 1  # LOW
+            elif 51 <= value <= 100:
+                return 2  # HIGH
+            elif value == 1:
+                return 1
+            elif value == 2:
+                return 2
+
+        return 0  # Default to OFF
 
     # =========================================================================
     # MQTT Publishing (Acknowledgments & Errors)

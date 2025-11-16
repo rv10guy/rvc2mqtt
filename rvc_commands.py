@@ -647,7 +647,8 @@ class RVCCommandEncoder:
         assert fan_id in SPECIAL_LOADS, f"Fan ID must be 1 or 2, got {fan_id}"
         assert 0 <= speed <= 2, f"Speed must be 0-2, got {speed}"
 
-        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=96)
+        # Ceiling fans use source address 158 (0x9E) - from CAN capture
+        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=158)
         frames = []
 
         if speed > 0:

@@ -425,6 +425,21 @@ entities:
     state_field: "load status"
 
   # ============================================================================
+  # CEILING FAN (Multi-Speed - Phase 2)
+  # Ceiling fans use dual-load control: instances [33, 34] for Low/High speeds
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instances: [33, 34]  # [low load, high load] - From CAN capture
+    fan_id: 2  # Bedroom ceiling fan (2018+ model)
+    entity_type: "fan"
+    entity_id: "fan_bedroom_ceiling"
+    name: "Bedroom Ceiling Fan"
+    device: "bedroom"
+    icon: "mdi:ceiling-fan"
+    state_field: "load status"
+    supports_speed: true  # Supports OFF/LOW/HIGH speeds
+
+  # ============================================================================
   # VENT LIDS (Covers - Phase 2)
   # These require TWO DC load instances (up motor and down motor)
   # ============================================================================
