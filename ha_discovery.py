@@ -336,10 +336,13 @@ class HADiscovery:
 
         # Add speed support for ceiling fans
         if entity.get('supports_speed'):
-            # Use preset modes for discrete speeds (LOW/HIGH)
-            payload['preset_mode_state_topic'] = state_topic
-            payload['preset_mode_command_topic'] = command_topic
-            payload['preset_modes'] = ["LOW", "HIGH"]
+            # Add percentage control for slider UI (0%, 50%, 100%)
+            percentage_state_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/percentage"
+            percentage_command_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/percentage/set"
+            payload['percentage_state_topic'] = percentage_state_topic
+            payload['percentage_command_topic'] = percentage_command_topic
+            payload['speed_range_min'] = 1
+            payload['speed_range_max'] = 2  # 2 speeds: LOW (50%), HIGH (100%)
 
         # Add optional fields
         if entity.get('icon'):

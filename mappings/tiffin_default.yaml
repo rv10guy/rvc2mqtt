@@ -124,7 +124,7 @@ entities:
     entity_id: "tank_propane_3"
     name: "Propane Tank"
     device: "tanks"
-    device_class: "gas"
+    # No device_class - gas class expects volume units, not percentage
     unit_of_measurement: "%"
     icon: "mdi:propane-tank"
     state_class: "measurement"
@@ -434,7 +434,7 @@ entities:
     entity_type: "fan"
     entity_id: "fan_bedroom_ceiling"
     name: "Bedroom Ceiling Fan"
-    device: "bedroom"
+    device: "vents"
     icon: "mdi:ceiling-fan"
     state_field: "load status"
     supports_speed: true  # Supports OFF/LOW/HIGH speeds

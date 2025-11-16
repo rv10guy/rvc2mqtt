@@ -162,6 +162,10 @@ class CommandHandler:
             self.audit_logger.log_command_success(cmd_id, command, frame_strs, latency_ms)
             self._publish_success(command, latency_ms)
 
+            # Publish percentage state for multi-speed fans
+            if command['command_type'] == 'fan' and self._is_multi_speed_fan(command['entity_id']):
+                self._publish_fan_percentage(command['entity_id'], command['value'])
+
             if self.debug_level > 0:
                 print(f"[CMD {cmd_id}] Success: {len(frames)} frames in {latency_ms:.1f}ms")
 
@@ -216,6 +220,9 @@ class CommandHandler:
         elif action_or_set == 'brightness':
             # Brightness: rv/light/ceiling/brightness/set
             action = 'brightness'
+        elif action_or_set == 'percentage':
+            # Fan percentage: rv/fan/fan_bedroom_ceiling/percentage/set
+            action = 'percentage'
         elif action_or_set in ['mode', 'temperature', 'fan_mode']:
             # Climate actions: rv/climate/hvac_front/mode/set
             action = action_or_set
@@ -235,6 +242,18 @@ class CommandHandler:
             elif action == 'brightness':
                 # Numeric brightness (0-100)
                 value = int(payload.strip())
+            elif action == 'percentage':
+                # Fan speed_range value: HA sends 0, 1, or 2 (not percentage 0-100)
+                # With speed_range_max=2: 0=OFF, 1=LOW (50%), 2=HIGH (100%)
+                speed_range_value = int(payload.strip())
+                if speed_range_value == 0:
+                    value = 'OFF'
+                elif speed_range_value == 1:
+                    value = 'LOW'
+                else:  # speed_range_value == 2
+                    value = 'HIGH'
+                # Treat as state command for validation
+                action = 'state'
             elif action == 'temperature':
                 # Numeric temperature
                 value = float(payload.strip())
@@ -498,6 +517,44 @@ class CommandHandler:
         })
 
         self.mqtt_client.publish(error_topic, payload, retain=False)
+
+    def _is_multi_speed_fan(self, entity_id: str) -> bool:
+        """Check if fan entity supports multiple speeds (has fan_id configured)"""
+        if not self.ha_discovery:
+            return False
+        for entity in self.ha_discovery.entities:
+            if entity.get('entity_id') == entity_id:
+                return entity.get('supports_speed', False)
+        return False
+
+    def _publish_fan_percentage(self, entity_id: str, speed_value: str):
+        """
+        Publish fan percentage state to MQTT
+        Converts speed (OFF/LOW/HIGH) to percentage (0/50/100)
+        Also publishes ON/OFF state for overall status display
+        """
+        if not self.mqtt_client:
+            return
+
+        # Convert speed to percentage
+        percentage_map = {
+            'OFF': 0,
+            'LOW': 50,
+            'HIGH': 100
+        }
+        percentage = percentage_map.get(speed_value.upper(), 0)
+
+        # Publish to percentage topic
+        percentage_topic = f'rv/fan/{entity_id}/percentage'
+        self.mqtt_client.publish(percentage_topic, str(percentage), retain=True)
+
+        # Publish to state topic (ON/OFF)
+        state_topic = f'rv/fan/{entity_id}/state'
+        state_value = 'OFF' if speed_value.upper() == 'OFF' else 'ON'
+        self.mqtt_client.publish(state_topic, state_value, retain=True)
+
+        if self.debug_level > 1:
+            print(f"[MQTT] Published {entity_id} percentage: {percentage}%, state: {state_value}")
 
     # =========================================================================
     # Utility Methods

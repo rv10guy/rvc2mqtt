@@ -117,6 +117,7 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
         client.subscribe("rv/climate/+/fan_mode/set")
         client.subscribe("rv/switch/+/set")
         client.subscribe("rv/fan/+/set")
+        client.subscribe("rv/fan/+/percentage/set")  # For ceiling fan percentage control
         client.subscribe("rv/cover/+/position/set")
         if debug_level:
             print("Phase 2 command subscriptions active")
