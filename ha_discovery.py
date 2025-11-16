@@ -125,6 +125,10 @@ class HADiscovery:
             payload = self._generate_switch_discovery(entity, unique_id)
         elif entity_type == 'climate':
             payload = self._generate_climate_discovery(entity, unique_id)
+        elif entity_type == 'fan':
+            payload = self._generate_fan_discovery(entity, unique_id)
+        elif entity_type == 'cover':
+            payload = self._generate_cover_discovery(entity, unique_id)
         else:
             print(f"Warning: Unknown entity type '{entity_type}' for {entity_id}")
             return None, None
@@ -239,11 +243,13 @@ class HADiscovery:
     def _generate_switch_discovery(self, entity, unique_id):
         """Generate discovery payload for switch entity"""
         state_topic = f"{self.state_topic_prefix}/switch/{entity['entity_id']}/state"
+        command_topic = f"{self.state_topic_prefix}/switch/{entity['entity_id']}/set"
 
         payload = {
             "name": entity['name'],
             "unique_id": unique_id,
             "state_topic": state_topic,
+            "command_topic": command_topic,
             "payload_on": "ON",
             "payload_off": "OFF",
             "availability_topic": f"{self.state_topic_prefix}/status",
@@ -272,9 +278,12 @@ class HADiscovery:
             "name": entity['name'],
             "unique_id": unique_id,
             "mode_state_topic": f"{base_topic}/mode",
+            "mode_command_topic": f"{base_topic}/mode/set",
             "temperature_state_topic": f"{base_topic}/setpoint",
+            "temperature_command_topic": f"{base_topic}/temperature/set",
             "current_temperature_topic": f"{base_topic}/temperature",
             "fan_mode_state_topic": f"{base_topic}/fan",
+            "fan_mode_command_topic": f"{base_topic}/fan_mode/set",
             "availability_topic": f"{self.state_topic_prefix}/status",
             "payload_available": "online",
             "payload_not_available": "offline"
@@ -301,6 +310,73 @@ class HADiscovery:
 
         if entity.get('precision'):
             payload['precision'] = entity['precision']
+
+        # Add device info
+        if entity.get('device') and entity['device'] in self.devices:
+            payload['device'] = self.devices[entity['device']]
+
+        return payload
+
+    def _generate_fan_discovery(self, entity, unique_id):
+        """Generate discovery payload for fan entity"""
+        state_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/state"
+        command_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/set"
+
+        payload = {
+            "name": entity['name'],
+            "unique_id": unique_id,
+            "state_topic": state_topic,
+            "command_topic": command_topic,
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "availability_topic": f"{self.state_topic_prefix}/status",
+            "payload_available": "online",
+            "payload_not_available": "offline"
+        }
+
+        # Add speed support for ceiling fans
+        if entity.get('supports_speed'):
+            # Add percentage control for slider UI (0%, 50%, 100%)
+            percentage_state_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/percentage"
+            percentage_command_topic = f"{self.state_topic_prefix}/fan/{entity['entity_id']}/percentage/set"
+            payload['percentage_state_topic'] = percentage_state_topic
+            payload['percentage_command_topic'] = percentage_command_topic
+            payload['speed_range_min'] = 1
+            payload['speed_range_max'] = 2  # 2 speeds: LOW (50%), HIGH (100%)
+
+        # Add optional fields
+        if entity.get('icon'):
+            payload['icon'] = entity['icon']
+
+        # Add device info
+        if entity.get('device') and entity['device'] in self.devices:
+            payload['device'] = self.devices[entity['device']]
+
+        return payload
+
+    def _generate_cover_discovery(self, entity, unique_id):
+        """Generate discovery payload for cover entity"""
+        state_topic = f"{self.state_topic_prefix}/cover/{entity['entity_id']}/state"
+        command_topic = f"{self.state_topic_prefix}/cover/{entity['entity_id']}/position/set"
+
+        payload = {
+            "name": entity['name'],
+            "unique_id": unique_id,
+            "state_topic": state_topic,
+            "command_topic": command_topic,
+            "payload_open": "open",
+            "payload_close": "close",
+            "availability_topic": f"{self.state_topic_prefix}/status",
+            "payload_available": "online",
+            "payload_not_available": "offline"
+        }
+
+        # Add optional fields
+        if entity.get('device_class'):
+            payload['device_class'] = entity['device_class']
+
+        if entity.get('icon'):
+            payload['icon'] = entity['icon']
 
         # Add device info
         if entity.get('device') and entity['device'] in self.devices:

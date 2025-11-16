@@ -8,6 +8,7 @@ This tool reads messages from an RV's CAN bus network, decodes them using the RV
 
 ## Features
 
+### Monitoring (Phase 1 - ✅ Complete)
 - **Real-time CAN Bus Monitoring**: Connects to CAN bus via TCP/IP using SLCAN protocol
 - **RV-C Protocol Decoding**: Interprets RV-C messages using a YAML specification file
 - **MQTT Publishing**: Sends decoded data to MQTT topics for easy integration
@@ -19,6 +20,18 @@ This tool reads messages from an RV's CAN bus network, decodes them using the RV
 - **Timestamping**: Publishes timestamps of last received messages
 - **Configurable Output**: Flexible debug levels and output modes
 - **Unit Conversions**: Automatic conversion of temperatures (C to F), voltages, currents, etc.
+
+### Bidirectional Control (Phase 2 - ✅ Complete)
+- **MQTT → CAN Control**: Send commands from Home Assistant to control RV devices
+- **Light Control**: Turn lights on/off, adjust brightness (0-100%)
+- **Climate Control**: Set HVAC mode (heat/cool/off), temperature (50-100°F), fan speed (auto/low/high)
+- **Switch Control**: Control pumps, generators, and other switches
+- **Multi-Layer Validation**: Schema, entity, range, security, and rate limit validation
+- **Security Controls**: Allowlist/denylist for entities and commands
+- **Rate Limiting**: Prevent CAN bus flooding with configurable limits
+- **Command Audit Logging**: Complete audit trail of all commands with timestamps and latency
+- **Error Handling**: Comprehensive error codes and MQTT status/error topics
+- **Command Acknowledgments**: Real-time feedback on command success/failure
 
 ## Supported Systems
 
@@ -79,6 +92,32 @@ discovery_enabled = 1                        # Enable HA MQTT Discovery (0=disab
 discovery_prefix = homeassistant             # HA discovery prefix (usually 'homeassistant')
 mapping_file = mappings/tiffin_default.yaml  # Entity mapping configuration file
 legacy_topics = 1                            # Keep publishing old RVC2/* topics (0=no, 1=yes)
+
+[Commands]
+enabled = 1                     # Enable bidirectional commands (0=disabled, 1=enabled)
+source_address = 99             # CAN source address for commands (default: 99)
+retry_count = 3                 # Number of retries for failed CAN transmissions
+retry_delay_ms = 100            # Delay between retries in milliseconds
+
+[RateLimiting]
+enabled = 1                             # Enable rate limiting (0=disabled, 1=enabled)
+global_commands_per_second = 10         # Max commands per second (global)
+entity_commands_per_second = 2          # Max commands per second per entity
+entity_cooldown_ms = 500                # Minimum delay between commands to same entity (ms)
+
+[Security]
+enabled = 1                             # Enable security controls (0=disabled, 1=enabled)
+allowlist =                             # Comma-separated list of allowed entity_ids (empty = all allowed)
+denylist =                              # Comma-separated list of denied entity_ids (empty = none denied)
+allowed_commands = light,climate,switch # Allowed command types (comma-separated)
+
+[Audit]
+enabled = 1                             # Enable audit logging (0=disabled, 1=enabled)
+log_file = logs/command_audit.log       # Audit log file path
+log_level = INFO                        # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+json_format = 1                         # Use JSON format (1) or human-readable (0)
+max_bytes = 10485760                    # Max log file size before rotation (10 MB)
+backup_count = 5                        # Number of backup files to keep
 ```
 
 ### Configuration Options
@@ -141,6 +180,37 @@ When Home Assistant MQTT Discovery is enabled, entities are published to friendl
 - `rv/climate/hvac_front/mode` - Front HVAC operating mode
 - `rv/light/light_ceiling/state` - Ceiling light state
 
+**Command Topics (Phase 2 - Bidirectional Control):**
+
+Send commands to RV devices by publishing to:
+- `rv/light/{entity_id}/set` - Turn light ON/OFF
+- `rv/light/{entity_id}/brightness/set` - Set light brightness (0-100)
+- `rv/climate/{entity_id}/mode/set` - Set HVAC mode (off, heat, cool, auto)
+- `rv/climate/{entity_id}/temperature/set` - Set temperature setpoint (50-100°F)
+- `rv/climate/{entity_id}/fan_mode/set` - Set fan mode (auto, low, high)
+- `rv/switch/{entity_id}/set` - Turn switch ON/OFF
+
+**Command Feedback Topics:**
+- `rv/command/status` - Success acknowledgments with latency
+- `rv/command/error` - Error messages with error codes
+
+**Quick Example:**
+```yaml
+# Turn on ceiling light
+service: mqtt.publish
+data:
+  topic: "rv/light/ceiling_light/set"
+  payload: "ON"
+
+# Set HVAC to 72°F
+service: mqtt.publish
+data:
+  topic: "rv/climate/hvac_front/temperature/set"
+  payload: "72"
+```
+
+See [Command Format Guide](docs/COMMAND_FORMAT.md) for complete documentation.
+
 ## Project Structure
 
 ```
@@ -156,8 +226,24 @@ rvc2mqtt/
 │   └── custom_template.yaml         # Template for custom mappings
 ├── docs/                            # Documentation
 │   ├── TOPIC_SCHEMA_DESIGN.md       # MQTT topic schema design
-│   └── HA_DISCOVERY_RESEARCH.md     # Home Assistant discovery research
-├── PHASE1_PLAN.md                   # Phase 1 development plan (COMPLETED)
+│   ├── HA_DISCOVERY_RESEARCH.md     # Home Assistant discovery research
+│   ├── COMMAND_FORMAT.md            # Command format guide (Phase 2)
+│   ├── HA_AUTOMATION_EXAMPLES.md    # Automation examples (Phase 2)
+│   ├── RVC_COMMAND_REFERENCE.md     # RV-C command reference (Phase 2)
+│   ├── PHASE2_ARCHITECTURE.md       # Phase 2 architecture design
+│   └── PHASE2_TESTING.md            # Phase 2 testing results
+├── tests/                           # Test suite (Phase 2)
+│   ├── test_phase2_core.py          # Core functionality tests
+│   ├── test_rvc_commands.py         # Command encoder tests
+│   ├── test_command_validator.py    # Validator tests
+│   └── test_integration.py          # Integration tests
+├── rvc_commands.py                  # RV-C command encoder (Phase 2)
+├── command_validator.py             # Command validation (Phase 2)
+├── command_handler.py               # MQTT→CAN orchestration (Phase 2)
+├── can_tx.py                        # CAN bus transmitter (Phase 2)
+├── audit_logger.py                  # Command audit logging (Phase 2)
+├── run_tests.py                     # Test runner (Phase 2)
+├── ROADMAP.md                       # Project roadmap
 ├── README.md                        # This file
 └── .gitignore                       # Git ignore rules
 ```
@@ -230,18 +316,71 @@ To create a custom mapping for your RV:
 
 See `docs/TOPIC_SCHEMA_DESIGN.md` for detailed mapping documentation.
 
-## Known Limitations
+## Phase 2 Bidirectional Control
 
-- Currently **one-way only**: CAN bus → MQTT (no MQTT → CAN bus control)
-- Phase 2 will add bidirectional control (lights, climate, etc.)
+### Supported Commands
+
+**Lights:**
+- Turn on/off
+- Set brightness (0-100%)
+- Multi-frame sequences for smooth dimming
+
+**Climate (HVAC):**
+- Set mode (off, heat, cool, auto)
+- Set temperature (50-100°F)
+- Set fan speed (auto, low, high)
+- Automatic furnace zone sync
+
+**Switches:**
+- Control water pumps
+- Control generator
+- Control other RV switches
+
+### Safety Features
+
+- **Multi-layer validation** prevents invalid commands from reaching CAN bus
+- **Rate limiting** prevents CAN bus flooding (configurable limits)
+- **Security controls** with allowlist/denylist for entities and commands
+- **Audit logging** tracks all commands with timestamps and outcomes
+- **Error handling** provides detailed error codes and messages
+- **Command retries** for failed CAN transmissions
+
+### Documentation
+
+- [Command Format Guide](docs/COMMAND_FORMAT.md) - Complete MQTT command reference
+- [Automation Examples](docs/HA_AUTOMATION_EXAMPLES.md) - Real-world HA automations
+- [RV-C Command Reference](docs/RVC_COMMAND_REFERENCE.md) - Low-level CAN frame details
+- [Phase 2 Architecture](docs/PHASE2_ARCHITECTURE.md) - System design
+- [Phase 2 Testing](docs/PHASE2_TESTING.md) - Test results (20/20 passing)
+
+### Testing
+
+Phase 2 includes comprehensive test coverage:
+
+```bash
+# Run all tests
+python3 run_tests.py
+
+# Run core tests only
+python3 tests/test_phase2_core.py
+```
+
+**Test Results:** ✅ 20/20 tests passing
+- RV-C command encoding
+- Multi-layer validation
+- End-to-end MQTT→CAN flow
+- Error handling
+- Rate limiting
+- Security controls
 
 ## Future Enhancements
 
-- [ ] Enable two-way MQTT to CAN bus communication (Phase 2)
+- [x] Enable two-way MQTT to CAN bus communication (✅ Phase 2 Complete)
 - [x] Add Home Assistant MQTT discovery (✅ Phase 1 Complete)
 - [ ] Docker container support
 - [ ] Web-based configuration interface
 - [ ] Support for additional RV manufacturers (custom mapping templates available)
+- [ ] Additional device types (awnings, leveling jacks, etc.)
 
 ## Contributing
 

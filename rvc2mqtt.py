@@ -7,10 +7,17 @@ import ruamel.yaml as yaml
 from datetime import datetime
 from ha_discovery import HADiscovery
 
+# Phase 2: Bidirectional Control
+from rvc_commands import RVCCommandEncoder
+from command_validator import CommandValidator
+from can_tx import CANTransmitter
+from audit_logger import AuditLogger
+from command_handler import CommandHandler
+
 config = configparser.ConfigParser(inline_comment_prefixes=';')
 config.read('rvc2mqtt.ini')
 debug_level = config.getint('General', 'debug')
-parameterized_strings = config.getboolean('General', 'parameterized_strings')
+parameterized_strings = bool(config.getint('General', 'parameterized_strings'))
 screenOut = config.getint('General', 'screenout')
 specfile = config.get('General', 'specfile')
 mqttBroker = config.get('MQTT', 'mqttBroker')
@@ -21,13 +28,70 @@ mqttOutputTopic = config.get('MQTT', 'mqttOutputTopic')
 canbus = config.get('CAN', 'CANport')
 
 # Home Assistant Discovery settings
-ha_discovery_enabled = config.getboolean('HomeAssistant', 'discovery_enabled', fallback=False)
+ha_discovery_enabled = bool(config.getint('HomeAssistant', 'discovery_enabled', fallback=0))
 ha_discovery_prefix = config.get('HomeAssistant', 'discovery_prefix', fallback='homeassistant')
 ha_mapping_file = config.get('HomeAssistant', 'mapping_file', fallback='mappings/tiffin_default.yaml')
-ha_legacy_topics = config.getboolean('HomeAssistant', 'legacy_topics', fallback=True)
+ha_legacy_topics = bool(config.getint('HomeAssistant', 'legacy_topics', fallback=1))
 
 last_msg_time = None
 ha_discovery = None  # Will be initialized if discovery is enabled
+can_transmitter = None  # Phase 2: Will be initialized if commands are enabled
+
+# Phase 2 configuration
+commands_enabled = bool(config.getint('Commands', 'enabled', fallback=0))
+if commands_enabled:
+    # Commands settings
+    cmd_source_address = config.getint('Commands', 'source_address', fallback=99)
+    cmd_retry_count = config.getint('Commands', 'retry_count', fallback=3)
+    cmd_retry_delay_ms = config.getint('Commands', 'retry_delay_ms', fallback=100)
+
+    # Rate limiting settings
+    rate_limit_enabled = bool(config.getint('RateLimiting', 'enabled', fallback=1))
+    rate_limit_config = {
+        'rate_limit_enabled': rate_limit_enabled,
+        'global_commands_per_second': config.getint('RateLimiting', 'global_commands_per_second', fallback=10),
+        'entity_commands_per_second': config.getint('RateLimiting', 'entity_commands_per_second', fallback=2),
+        'entity_cooldown_ms': config.getint('RateLimiting', 'entity_cooldown_ms', fallback=500),
+    }
+
+    # Security settings
+    security_enabled = bool(config.getint('Security', 'enabled', fallback=1))
+    allowlist_str = config.get('Security', 'allowlist', fallback='')
+    denylist_str = config.get('Security', 'denylist', fallback='')
+    allowed_commands_str = config.get('Security', 'allowed_commands', fallback='light,climate,switch,fan,cover')
+
+    security_config = {
+        'security_enabled': security_enabled,
+        'allowlist': [x.strip() for x in allowlist_str.split(',') if x.strip()],
+        'denylist': [x.strip() for x in denylist_str.split(',') if x.strip()],
+        'allowed_commands': [x.strip() for x in allowed_commands_str.split(',') if x.strip()],
+    }
+
+    # Audit logging settings
+    audit_enabled = bool(config.getint('Audit', 'enabled', fallback=1))
+    audit_log_file = config.get('Audit', 'log_file', fallback='logs/command_audit.log')
+    audit_log_level_str = config.get('Audit', 'log_level', fallback='INFO')
+    audit_json_format = bool(config.getint('Audit', 'json_format', fallback=1))
+    audit_max_bytes = config.getint('Audit', 'max_bytes', fallback=10485760)
+    audit_backup_count = config.getint('Audit', 'backup_count', fallback=5)
+
+    # Map log level string to constant
+    audit_log_levels = {
+        'DEBUG': AuditLogger.LEVEL_DEBUG,
+        'INFO': AuditLogger.LEVEL_INFO,
+        'WARNING': AuditLogger.LEVEL_WARNING,
+        'ERROR': AuditLogger.LEVEL_ERROR,
+        'CRITICAL': AuditLogger.LEVEL_CRITICAL,
+    }
+    audit_log_level = audit_log_levels.get(audit_log_level_str.upper(), AuditLogger.LEVEL_INFO)
+
+    # Merge rate limiting and security configs for validator
+    validator_config = {**rate_limit_config, **security_config}
+
+# Phase 2 global instances (will be initialized in main)
+command_handler = None
+can_transmitter = None
+audit_logger = None
 
 def signal_handler(signal, frame):
     global t
@@ -42,18 +106,48 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
         print("MQTT Connected with code "+str(reason_code))
 #   client.subscribe("rvc/#")
 
+    # Phase 2: Subscribe to command topics
+    if commands_enabled:
+        if debug_level:
+            print("Subscribing to Phase 2 command topics...")
+        client.subscribe("rv/light/+/set")
+        client.subscribe("rv/light/+/brightness/set")
+        client.subscribe("rv/climate/+/mode/set")
+        client.subscribe("rv/climate/+/temperature/set")
+        client.subscribe("rv/climate/+/fan_mode/set")
+        client.subscribe("rv/switch/+/set")
+        client.subscribe("rv/fan/+/set")
+        client.subscribe("rv/fan/+/percentage/set")  # For ceiling fan percentage control
+        client.subscribe("rv/cover/+/position/set")
+        if debug_level:
+            print("Phase 2 command subscriptions active")
+
 def on_mqtt_subscribe(client, userdata, mid, reason_code_list, properties):
     if debug_level:
         print("MQTT Sub: "+str(mid))
 
 def on_mqtt_message(client, userdata, msg):
     global last_msg_time
+    global command_handler
+
+    # Phase 2: Check if this is a command topic
+    if commands_enabled and command_handler and msg.topic.startswith('rv/'):
+        # Route to command handler
+        try:
+            payload_str = msg.payload.decode('utf-8')
+            command_handler.process_mqtt_command(msg.topic, payload_str)
+        except Exception as e:
+            if debug_level:
+                print(f"Error processing command: {e}")
+        return
+
+    # Legacy message handling (not a command topic)
     try:
         topic = msg.topic[13:]
         payload = json.loads(msg.payload)
         frames = payload.get("frame", [])
         num_frames = len(frames)
-            
+
         if debug_level:
             print(f"Send CAN ID: {topic}")
 
@@ -94,10 +188,11 @@ def on_mqtt_publish(client, userdata, mid, reason_code, properties):
 #        print("CAN Send Failed")
 
 class TCP_CANWatcher(threading.Thread):
-    def __init__(self, queue):
+    def __init__(self, queue, can_transmitter=None):
         threading.Thread.__init__(self)
         self.kill_received = False
         self.queue = queue
+        self.can_transmitter = can_transmitter
 
     def run(self):
         connected = False
@@ -106,10 +201,17 @@ class TCP_CANWatcher(threading.Thread):
                 try:
                     bus = can.interface.Bus(interface='slcan',
                                             channel='socket://' + canbus,
-                                            rtscts=True,
                                             bitrate=250000)
                     connected = True
                     print("Connected to the CANbus.")
+
+                    # Share the bus with CANTransmitter if provided
+                    if self.can_transmitter:
+                        self.can_transmitter.bus = bus
+                        self.can_transmitter.connected = True
+                        self.can_transmitter.owns_bus = False
+                        print("Shared CAN bus with Phase 2 transmitter.")
+
                 except serial.serialutil.SerialException as err:
                     print("Failed to connect to the CANbus. Retrying in 1 minute.")
                     time.sleep(60)
@@ -568,6 +670,7 @@ def process_Tiffin(topic, payload, previous_values):
 signal.signal(signal.SIGINT, signal_handler)
 
 def main():
+    global can_transmitter
     retain=False
     previous_values = {}
 
@@ -669,6 +772,69 @@ if __name__ == "__main__":
                 print("Error loading HA Discovery mapping: {}".format(e))
                 ha_discovery = None
 
+        # Phase 2: Initialize bidirectional control components
+        if commands_enabled:
+            print("\nInitializing Phase 2: Bidirectional Control...")
+
+            # Initialize audit logger
+            if audit_enabled:
+                audit_logger = AuditLogger(
+                    log_file=audit_log_file,
+                    log_level=audit_log_level,
+                    json_format=audit_json_format,
+                    max_bytes=audit_max_bytes,
+                    backup_count=audit_backup_count,
+                    console_output=(debug_level > 1)
+                )
+                print(f"  Audit logging: {audit_log_file}")
+            else:
+                audit_logger = None
+
+            # Initialize CAN transmitter
+            can_transmitter = CANTransmitter(
+                can_interface='slcan',
+                can_port=f'socket://{canbus}',
+                retry_count=cmd_retry_count,
+                retry_delay_ms=cmd_retry_delay_ms,
+                debug_level=debug_level
+            )
+            print(f"  CAN TX: socket://{canbus}")
+
+            # Initialize RV-C command encoder
+            encoder = RVCCommandEncoder(source_address=cmd_source_address)
+            print(f"  Encoder: Source address {cmd_source_address}")
+
+            # Initialize command validator
+            validator = CommandValidator(
+                ha_discovery=ha_discovery,
+                config=validator_config
+            )
+            print(f"  Validator: Security={security_enabled}, Rate limiting={rate_limit_enabled}")
+
+            # Initialize command handler
+            command_handler = CommandHandler(
+                encoder=encoder,
+                validator=validator,
+                transmitter=can_transmitter,
+                audit_logger=audit_logger if audit_enabled else AuditLogger(log_file='/dev/null', console_output=False),
+                ha_discovery=ha_discovery,
+                mqtt_client=mqttc,
+                debug_level=debug_level
+            )
+            print("  Command handler: Ready")
+
+            # NOTE: CAN transmitter will receive bus from TCP_CANWatcher thread
+            # to avoid creating duplicate connections
+            print("  CAN TX: Will share CAN bus with reader thread")
+
+            print("Phase 2 initialization complete\n")
+
+        # Start CAN receive thread (after Phase 2 init so it can share the bus)
+        q = queue.Queue()
+        t = TCP_CANWatcher(q, can_transmitter)
+        t.start()
+        print("CAN receive thread started\n")
+
         try:
             print("Connecting to MQTT: {0:s}".format(mqttBroker))
             mqttc.connect(mqttBroker, port=1883) #connect to broker
@@ -706,9 +872,5 @@ if __name__ == "__main__":
             exit(1)
 
     print("Processing start...")
-
-    q = queue.Queue()
-    t = TCP_CANWatcher(q)	# Start CAN receive thread
-    t.start()
 
     main()
