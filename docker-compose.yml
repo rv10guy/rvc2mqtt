@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  rvc2mqtt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rvc2mqtt
+    image: rvc2mqtt:latest
+
+    # Use host network mode for simplest configuration
+    # This allows direct access to ESP32 SLCAN and MQTT broker
+    network_mode: host
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - TZ=America/New_York       # Set your timezone
+      # Optionally override config via environment variables
+      # - DEBUG_LEVEL=1
+      # - MQTT_BROKER=192.168.50.77
+      # - MQTT_USER=hassio
+      # - MQTT_PASS=hassio
+
+    # Volume mounts
+    volumes:
+      # Configuration file (read-only)
+      - ./rvc2mqtt.ini:/app/rvc2mqtt.ini:ro
+
+      # Mappings directory (read-only)
+      - ./mappings:/app/mappings:ro
+
+      # RVC spec file (read-only)
+      - ./rvc-spec.yml:/app/rvc-spec.yml:ro
+
+      # Logs directory (read-write for persistence)
+      - ./logs:/app/logs
+
+      # Audit logs directory (read-write for persistence)
+      - ./audit:/app/audit
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "rvc2mqtt.py"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Notes:
+# - Host network mode is recommended for simplest setup
+# - All configuration files are volume mounted from host
+# - Logs persist across container restarts
+# - To start: docker-compose up -d
+# - To stop: docker-compose down
+# - To view logs: docker-compose logs -f
+# - To rebuild: docker-compose up -d --build
