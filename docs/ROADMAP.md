@@ -116,6 +116,60 @@ Make RV systems as smart and accessible as smart homes - enabling any RV owner t
 
 ---
 
+## Phase 2.5: Docker Deployment (December 2025)
+**Goal:** Deploy rvc2mqtt in production Docker container on Unraid server
+
+**Status:** 🚀 **IN PROGRESS** - Packaging for production deployment
+
+### Features
+- [ ] Dockerfile for containerized deployment
+- [ ] docker-compose.yml for easy management
+- [ ] Production-ready configuration
+- [ ] Volume mounts for logs and config
+- [ ] Network configuration (host mode)
+- [ ] Deployment documentation
+- [ ] Unraid-specific setup guide
+
+### Technical Tasks
+- [ ] Create Dockerfile (Python 3.11 slim base)
+- [ ] Create docker-compose.yml
+- [ ] Create .dockerignore
+- [ ] Generate requirements.txt
+- [ ] Configure volume mounts (logs, config, mappings)
+- [ ] Set environment variables (timezone, debug)
+- [ ] Create DOCKER_DEPLOYMENT.md documentation
+- [ ] Test local Docker build
+- [ ] Deploy to Unraid server
+- [ ] Validate production operation
+
+### Success Metrics
+- Container builds without errors
+- All sensors appear in Home Assistant
+- All commands work from Home Assistant
+- System runs reliably for 7+ days
+- Logs persist across restarts
+- Easy update process
+
+### Estimated Effort
+- Development: 7 hours
+- Testing: 2 hours
+- Validation: 1 week (monitoring)
+
+### Key Deliverables
+- `Dockerfile` - Container build specification
+- `docker-compose.yml` - Container orchestration
+- `.dockerignore` - Build optimization
+- `requirements.txt` - Python dependencies
+- `docs/DOCKER_DEPLOYMENT.md` - Deployment guide
+- `docs/PHASE2.5_PLAN.md` - Phase 2.5 planning document
+
+### Deployment Architecture
+```
+ESP32 (SLCAN) → Unraid [rvc2mqtt Docker] → HA Yellow [MQTT + HA]
+```
+
+---
+
 ## Phase 3: Architecture Enhancement (Q3 2026)
 **Goal:** Evaluate and optimize the overall system architecture
 
@@ -352,12 +406,22 @@ Phase 2: Bidirectional Communication is **production ready** with all features i
 - Comprehensive audit logging with sub-millisecond latency
 - Ceiling fan slider UI with 3 speeds (OFF/LOW/HIGH)
 
-### 🚀 Next Step: Phase 3 (Planned Q1-Q2 2026)
-The next development phase is **Phase 3: Architecture Enhancement**. This will evaluate:
+### 🚀 Current: Phase 2.5 (In Progress - December 2025)
+The current phase is **Phase 2.5: Docker Deployment**. This will provide:
+- Production-ready Docker containerization
+- Deployment on Unraid server
+- Easy update and management process
+- Foundation for future deployment options
+- Validation of system reliability
+
+**Current Focus:** Create Dockerfile, docker-compose.yml, and deployment documentation
+
+### 📋 Next: Phase 3 (Planned Q1-Q2 2026)
+After Docker deployment is validated, Phase 3 will evaluate architecture options:
 - MQTT latency and reliability benchmarking
 - ESPHome RV-C feasibility study
 - HA custom component research
 - ESP32-native solution prototyping
 - Architecture decision with data backing
 
-**Recommended First Task:** Benchmark current MQTT performance and research ESPHome custom component requirements.
+**Recommended First Task:** Monitor Phase 2.5 Docker deployment for 1-2 weeks, then benchmark performance.
