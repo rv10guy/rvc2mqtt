@@ -51,7 +51,8 @@ RUN mkdir -p /app/logs /app/audit
 ENV TZ=America/New_York
 
 # Run as non-root user for security
-RUN useradd -m -u 1000 rvc2mqtt && \
+# Use UID 99 (nobody) to match Unraid's standard appdata user
+RUN useradd -m -u 99 rvc2mqtt && \
     chown -R rvc2mqtt:rvc2mqtt /app
 USER rvc2mqtt
 
