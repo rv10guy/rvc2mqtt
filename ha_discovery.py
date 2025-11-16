@@ -334,6 +334,13 @@ class HADiscovery:
             "payload_not_available": "offline"
         }
 
+        # Add speed support for ceiling fans
+        if entity.get('supports_speed'):
+            # Use preset modes for discrete speeds (LOW/HIGH)
+            payload['preset_mode_state_topic'] = state_topic
+            payload['preset_mode_command_topic'] = command_topic
+            payload['preset_modes'] = ["LOW", "HIGH"]
+
         # Add optional fields
         if entity.get('icon'):
             payload['icon'] = entity['icon']
