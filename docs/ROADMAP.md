@@ -119,54 +119,74 @@ Make RV systems as smart and accessible as smart homes - enabling any RV owner t
 ## Phase 2.5: Docker Deployment (December 2025)
 **Goal:** Deploy rvc2mqtt in production Docker container on Unraid server
 
-**Status:** 🚀 **IN PROGRESS** - Packaging for production deployment
+**Status:** ✅ **COMPLETE** - Successfully deployed to production on Unraid
 
 ### Features
-- [ ] Dockerfile for containerized deployment
-- [ ] docker-compose.yml for easy management
-- [ ] Production-ready configuration
-- [ ] Volume mounts for logs and config
-- [ ] Network configuration (host mode)
-- [ ] Deployment documentation
-- [ ] Unraid-specific setup guide
+- [x] Dockerfile for containerized deployment
+- [x] docker-compose.yml for easy management
+- [x] Production-ready configuration
+- [x] Volume mounts for logs and config
+- [x] Network configuration (host mode)
+- [x] Deployment documentation
+- [x] Unraid-specific setup guide
+- [x] GitHub Actions CI/CD for automatic builds
+- [x] GitHub Container Registry (ghcr.io) publishing
+- [x] Unraid template for GUI management
 
 ### Technical Tasks
-- [ ] Create Dockerfile (Python 3.11 slim base)
-- [ ] Create docker-compose.yml
-- [ ] Create .dockerignore
-- [ ] Generate requirements.txt
-- [ ] Configure volume mounts (logs, config, mappings)
-- [ ] Set environment variables (timezone, debug)
-- [ ] Create DOCKER_DEPLOYMENT.md documentation
-- [ ] Test local Docker build
-- [ ] Deploy to Unraid server
-- [ ] Validate production operation
+- [x] Create Dockerfile (Python 3.11 slim base)
+- [x] Create docker-compose.yml
+- [x] Create .dockerignore
+- [x] Generate requirements.txt
+- [x] Configure volume mounts (logs, config, mappings)
+- [x] Set environment variables (timezone, debug)
+- [x] Create DOCKER_DEPLOYMENT.md documentation
+- [x] Create UNRAID_SETUP.md documentation
+- [x] Test local Docker build
+- [x] Deploy to Unraid server
+- [x] Validate production operation
+- [x] Fix PyYAML dependency issue
+- [x] Fix Unraid permissions (UID:GID 99:100)
+- [x] Configure GitHub Actions workflow
+- [x] Create Unraid template XML
+- [x] Verify bidirectional control working
 
 ### Success Metrics
-- Container builds without errors
-- All sensors appear in Home Assistant
-- All commands work from Home Assistant
-- System runs reliably for 7+ days
-- Logs persist across restarts
-- Easy update process
+- ✅ Container builds without errors (multi-arch: amd64, arm64)
+- ✅ All 33 entities appear in Home Assistant
+- ✅ All commands work from Home Assistant (lights verified)
+- ⏳ System runs reliably for 7+ days (monitoring in progress)
+- ✅ Logs persist across restarts
+- ✅ Easy update process (via Unraid GUI or docker pull)
 
-### Estimated Effort
-- Development: 7 hours
-- Testing: 2 hours
-- Validation: 1 week (monitoring)
+### Actual Effort
+- Development: 3 hours
+- Troubleshooting: 2 hours (permissions, dependencies)
+- Testing: 1 hour
+- Validation: In progress (7 day monitoring)
 
 ### Key Deliverables
-- `Dockerfile` - Container build specification
-- `docker-compose.yml` - Container orchestration
-- `.dockerignore` - Build optimization
-- `requirements.txt` - Python dependencies
-- `docs/DOCKER_DEPLOYMENT.md` - Deployment guide
-- `docs/PHASE2.5_PLAN.md` - Phase 2.5 planning document
+- ✅ `Dockerfile` - Container build specification
+- ✅ `docker-compose.yml` - Container orchestration
+- ✅ `.dockerignore` - Build optimization
+- ✅ `requirements.txt` - Python dependencies
+- ✅ `docs/DOCKER_DEPLOYMENT.md` - Deployment guide
+- ✅ `docs/UNRAID_SETUP.md` - Unraid-specific guide
+- ✅ `docs/PHASE2.5_PLAN.md` - Phase 2.5 planning document
+- ✅ `.github/workflows/docker-build.yml` - CI/CD automation
+- ✅ `unraid-template.xml` - Unraid GUI template
 
 ### Deployment Architecture
 ```
 ESP32 (SLCAN) → Unraid [rvc2mqtt Docker] → HA Yellow [MQTT + HA]
+                    ↑
+            GitHub Actions (ghcr.io)
 ```
+
+### Issues Resolved
+1. **PyYAML Dependency** - Added missing PyYAML>=6.0.0 to requirements.txt
+2. **Unraid Permissions** - Configured UID:GID 99:100 (nobody:users) for proper volume mount access
+3. **Directory Permissions** - Required chmod 775 on logs/ and audit/ directories for group write access
 
 ---
 
@@ -406,15 +426,36 @@ Phase 2: Bidirectional Communication is **production ready** with all features i
 - Comprehensive audit logging with sub-millisecond latency
 - Ceiling fan slider UI with 3 speeds (OFF/LOW/HIGH)
 
-### 🚀 Current: Phase 2.5 (In Progress - December 2025)
-The current phase is **Phase 2.5: Docker Deployment**. This will provide:
-- Production-ready Docker containerization
-- Deployment on Unraid server
-- Easy update and management process
-- Foundation for future deployment options
-- Validation of system reliability
+### ✅ Phase 2.5 Complete (December 2025)
+Phase 2.5: Docker Deployment is **production ready** and deployed on Unraid. The system now provides:
+- Production-ready Docker containerization (multi-arch: amd64, arm64)
+- Automated CI/CD via GitHub Actions
+- Published to GitHub Container Registry (ghcr.io)
+- Unraid template for easy GUI management
+- Deployment on Unraid server (192.168.50.77)
+- Easy update process via Unraid Docker GUI
+- Persistent logs and audit trails
+- 33 entities auto-discovered in Home Assistant
+- Full bidirectional control verified (lights tested)
 
-**Current Focus:** Create Dockerfile, docker-compose.yml, and deployment documentation
+**Deployment Stack:**
+```
+ESP32 SLCAN (192.168.50.103:3333)
+    ↓
+Docker Container (Unraid)
+    ↓
+HA Yellow MQTT (192.168.50.77)
+```
+
+### 🔜 Next: Monitoring & Validation (December 2025 - January 2026)
+The system is now deployed in production. Next steps:
+- Monitor system stability for 7+ days
+- Validate all device controls (HVAC, switches, fans)
+- Review audit logs for any issues
+- Document any additional findings
+- Prepare for Phase 3 architecture evaluation
+
+**Current Focus:** Production monitoring and stability validation
 
 ### 📋 Next: Phase 3 (Planned Q1-Q2 2026)
 After Docker deployment is validated, Phase 3 will evaluate architecture options:
