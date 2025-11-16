@@ -404,6 +404,51 @@ entities:
     on_value: "01"
 
   # ============================================================================
+  # VENT FANS (Controllable - Phase 2)
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 23
+    entity_type: "fan"
+    entity_id: "vent_fan_galley"
+    name: "Galley Vent Fan Control"
+    device: "vents"
+    icon: "mdi:fan"
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instance: 19
+    entity_type: "fan"
+    entity_id: "vent_fan_bath"
+    name: "Bath Vent Fan Control"
+    device: "vents"
+    icon: "mdi:fan"
+    state_field: "load status"
+
+  # ============================================================================
+  # VENT LIDS (Covers - Phase 2)
+  # These require TWO DC load instances (up motor and down motor)
+  # ============================================================================
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instances: [26, 27]  # [up motor, down motor]
+    entity_type: "cover"
+    entity_id: "vent_lid_galley"
+    name: "Galley Vent Lid"
+    device: "vents"
+    icon: "mdi:window-open-variant"
+    device_class: "window"
+    state_field: "load status"
+
+  - rvc_message: "DC_DIMMER_STATUS_3"
+    instances: [28, 29]  # [up motor, down motor]
+    entity_type: "cover"
+    entity_id: "vent_lid_bath"
+    name: "Bath Vent Lid"
+    device: "vents"
+    icon: "mdi:window-open-variant"
+    device_class: "window"
+    state_field: "load status"
+
+  # ============================================================================
   # BINARY SENSORS (Status indicators)
   # ============================================================================
   - rvc_message: "GENERATOR_STATUS_1"

@@ -509,6 +509,90 @@ class RVCCommandEncoder:
         # Vent fans use source address 96
         return self.encode_switch_on_off(instance, turn_on, source_address=96)
 
+    def encode_vent_lid(self,
+                       up_instance: int,
+                       down_instance: int,
+                       position: str) -> List[Tuple[int, List[int], int]]:
+        """
+        Encode vent lid position command (dual motor control)
+
+        Vent lids use two DC load instances - one for the up motor and one
+        for the down motor. To move the lid, we must:
+        1. Stop the opposite motor
+        2. Run the desired motor for 20 seconds
+
+        Args:
+            up_instance: Load instance for UP motor
+            down_instance: Load instance for DOWN motor
+            position: Desired position ('open' or 'close')
+
+        Returns:
+            List of CAN frames: [(can_id, data_bytes, delay_ms)]
+        """
+        position = position.lower()
+        assert position in ['open', 'close'], f"Position must be 'open' or 'close', got {position}"
+
+        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=96)
+        frames = []
+
+        if position == 'open':
+            # To OPEN: Stop DOWN motor, then run UP motor for 20 seconds
+            # Frame 1: Stop DOWN motor
+            data_stop = [
+                down_instance,
+                0xFF,
+                0x00,  # Brightness = 0 (off)
+                3,     # Command 3 = OFF
+                0,     # Duration = 0 (immediate)
+                0x00,
+                0xFF,
+                0xFF
+            ]
+            frames.append((can_id, data_stop, 0))
+
+            # Frame 2: Run UP motor for 20 seconds
+            data_run = [
+                up_instance,
+                0xFF,
+                0xC8,  # Brightness = 200 (100%)
+                1,     # Command 1 = ON_DURATION
+                20,    # Duration = 20 seconds
+                0x00,
+                0xFF,
+                0xFF
+            ]
+            frames.append((can_id, data_run, 0))
+
+        else:  # position == 'close'
+            # To CLOSE: Stop UP motor, then run DOWN motor for 20 seconds
+            # Frame 1: Stop UP motor
+            data_stop = [
+                up_instance,
+                0xFF,
+                0x00,  # Brightness = 0 (off)
+                3,     # Command 3 = OFF
+                0,     # Duration = 0 (immediate)
+                0x00,
+                0xFF,
+                0xFF
+            ]
+            frames.append((can_id, data_stop, 0))
+
+            # Frame 2: Run DOWN motor for 20 seconds
+            data_run = [
+                down_instance,
+                0xFF,
+                0xC8,  # Brightness = 200 (100%)
+                1,     # Command 1 = ON_DURATION
+                20,    # Duration = 20 seconds
+                0x00,
+                0xFF,
+                0xFF
+            ]
+            frames.append((can_id, data_run, 0))
+
+        return frames
+
     # =========================================================================
     # Ceiling Fan Commands (Multi-Load Control)
     # =========================================================================
@@ -692,6 +776,31 @@ def test_encoder():
     print("Test 7: Switch On/Off")
     frames = encoder.encode_switch_on_off(instance=93, turn_on=True)
     print(f"  Command: Turn ON switch instance 93")
+    for i, (cid, data, delay) in enumerate(frames):
+        print(f"    Frame {i+1}: {encoder.format_frame_debug(cid, data)}")
+    print("  ✓ PASS")
+    print()
+
+    # Test 8: Vent fan on/off
+    print("Test 8: Vent Fan On/Off")
+    frames = encoder.encode_vent_fan(instance=25, turn_on=True)
+    print(f"  Command: Turn ON vent fan instance 25")
+    for i, (cid, data, delay) in enumerate(frames):
+        print(f"    Frame {i+1}: {encoder.format_frame_debug(cid, data)}")
+    print("  ✓ PASS")
+    print()
+
+    # Test 9: Vent lid open/close
+    print("Test 9: Vent Lid Control")
+    frames = encoder.encode_vent_lid(up_instance=26, down_instance=27, position='open')
+    print(f"  Command: OPEN vent lid (up=26, down=27)")
+    print(f"  Frames: {len(frames)}")
+    for i, (cid, data, delay) in enumerate(frames):
+        print(f"    Frame {i+1}: {encoder.format_frame_debug(cid, data)}")
+    print()
+    frames = encoder.encode_vent_lid(up_instance=26, down_instance=27, position='close')
+    print(f"  Command: CLOSE vent lid (up=26, down=27)")
+    print(f"  Frames: {len(frames)}")
     for i, (cid, data, delay) in enumerate(frames):
         print(f"    Frame {i+1}: {encoder.format_frame_debug(cid, data)}")
     print("  ✓ PASS")

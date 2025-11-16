@@ -197,7 +197,7 @@ class CommandHandler:
             Command dictionary or None if parsing fails
         """
         # Parse topic pattern: rv/{entity_type}/{entity_id}/{action}/set
-        pattern = r'^rv/(light|climate|switch)/([^/]+)/([^/]+)(?:/set)?$'
+        pattern = r'^rv/(light|climate|switch|fan|cover)/([^/]+)/([^/]+)(?:/set)?$'
         match = re.match(pattern, topic)
 
         if not match:
@@ -211,7 +211,7 @@ class CommandHandler:
 
         # Determine action based on topic structure
         if action_or_set == 'set':
-            # Simple format: rv/light/ceiling/set
+            # Simple format: rv/light/ceiling/set or rv/fan/vent1/set
             action = 'state'
         elif action_or_set == 'brightness':
             # Brightness: rv/light/ceiling/brightness/set
@@ -219,6 +219,9 @@ class CommandHandler:
         elif action_or_set in ['mode', 'temperature', 'fan_mode']:
             # Climate actions: rv/climate/hvac_front/mode/set
             action = action_or_set
+        elif action_or_set == 'position':
+            # Cover position: rv/cover/vent_lid1/position/set
+            action = 'position'
         else:
             if self.debug_level > 0:
                 print(f"Unknown action: {action_or_set}")
@@ -237,6 +240,9 @@ class CommandHandler:
                 value = float(payload.strip())
             elif action in ['mode', 'fan_mode']:
                 # String mode values
+                value = payload.strip().lower()
+            elif action == 'position':
+                # Cover position: open/close
                 value = payload.strip().lower()
             else:
                 value = payload.strip()
@@ -303,6 +309,23 @@ class CommandHandler:
                 turn_on = (value == 'ON')
                 return self.encoder.encode_switch_on_off(instance, turn_on)
 
+            elif command_type == 'fan':
+                # Vent fan ON/OFF
+                turn_on = (value == 'ON')
+                return self.encoder.encode_vent_fan(instance, turn_on)
+
+            elif command_type == 'cover':
+                # Vent lid - needs TWO instances (up motor and down motor)
+                # Get both instances from entity config
+                instances = self._get_cover_instances(command['entity_id'])
+                if not instances or len(instances) != 2:
+                    if self.debug_level > 0:
+                        print(f"Cover requires 2 instances (up, down), got: {instances}")
+                    return None
+
+                up_instance, down_instance = instances
+                return self.encoder.encode_vent_lid(up_instance, down_instance, value)
+
             else:
                 if self.debug_level > 0:
                     print(f"Unknown command type: {command_type}")
@@ -337,6 +360,32 @@ class CommandHandler:
                 return entity.get('instance', 1)
 
         # Not found
+        return None
+
+    def _get_cover_instances(self, entity_id: str) -> Optional[Tuple[int, int]]:
+        """
+        Get RV-C instance IDs for cover entity (up motor, down motor)
+
+        Covers require two DC load instances - one for up and one for down.
+
+        Args:
+            entity_id: Entity ID from HA
+
+        Returns:
+            Tuple of (up_instance, down_instance) or None if not found
+        """
+        if not self.ha_discovery:
+            return None
+
+        # Look up entity in HA discovery mapping
+        for entity in self.ha_discovery.entities:
+            if entity.get('entity_id') == entity_id:
+                # Cover entities should have an 'instances' field with [up, down]
+                instances = entity.get('instances')
+                if instances and len(instances) == 2:
+                    return (instances[0], instances[1])
+
+        # Not found or invalid
         return None
 
     # =========================================================================

@@ -82,6 +82,26 @@ class CommandValidator:
                     'allowed_values': ['ON', 'OFF'],
                 }
             }
+        },
+        'fan': {
+            'required_fields': ['entity_id', 'command_type'],
+            'actions': {
+                'state': {
+                    'value_field': 'value',
+                    'value_type': str,
+                    'allowed_values': ['ON', 'OFF'],
+                }
+            }
+        },
+        'cover': {
+            'required_fields': ['entity_id', 'command_type'],
+            'actions': {
+                'position': {
+                    'value_field': 'value',
+                    'value_type': str,
+                    'allowed_values': ['open', 'close'],
+                }
+            }
         }
     }
 
@@ -102,7 +122,7 @@ class CommandValidator:
         self.security_enabled = self.config.get('security_enabled', True)
         self.allowlist = set(self.config.get('allowlist', []))
         self.denylist = set(self.config.get('denylist', []))
-        self.allowed_command_types = set(self.config.get('allowed_commands', ['light', 'climate', 'switch']))
+        self.allowed_command_types = set(self.config.get('allowed_commands', ['light', 'climate', 'switch', 'fan', 'cover']))
 
         # Rate limiting settings
         self.rate_limit_enabled = self.config.get('rate_limit_enabled', True)
