@@ -58,7 +58,7 @@ if commands_enabled:
     security_enabled = bool(config.getint('Security', 'enabled', fallback=1))
     allowlist_str = config.get('Security', 'allowlist', fallback='')
     denylist_str = config.get('Security', 'denylist', fallback='')
-    allowed_commands_str = config.get('Security', 'allowed_commands', fallback='light,climate,switch')
+    allowed_commands_str = config.get('Security', 'allowed_commands', fallback='light,climate,switch,fan,cover')
 
     security_config = {
         'security_enabled': security_enabled,
@@ -116,6 +116,8 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
         client.subscribe("rv/climate/+/temperature/set")
         client.subscribe("rv/climate/+/fan_mode/set")
         client.subscribe("rv/switch/+/set")
+        client.subscribe("rv/fan/+/set")
+        client.subscribe("rv/cover/+/position/set")
         if debug_level:
             print("Phase 2 command subscriptions active")
 

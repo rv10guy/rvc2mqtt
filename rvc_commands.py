@@ -497,17 +497,33 @@ class RVCCommandEncoder:
                        instance: int,
                        turn_on: bool) -> List[Tuple[int, List[int], int]]:
         """
-        Encode vent fan on/off command
+        Encode vent fan on/off command (uses TOGGLE)
+
+        Vent fans use TOGGLE command (0x05) rather than separate ON/OFF commands.
+        Both ON and OFF requests send the same TOGGLE command.
 
         Args:
             instance: Vent fan load ID
-            turn_on: True to turn on, False to turn off
+            turn_on: True to turn on, False to turn off (both use TOGGLE)
 
         Returns:
             List of CAN frames: [(can_id, data_bytes, delay_ms)]
         """
-        # Vent fans use source address 96
-        return self.encode_switch_on_off(instance, turn_on, source_address=96)
+        # Vent fans use source address 154 (0x9A) and TOGGLE command
+        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=154)
+
+        data = [
+            instance,
+            0xFF,
+            0xC8,  # Brightness: 200 (100%)
+            self.CMD_TOGGLE,  # Command 5 = TOGGLE
+            0xFF,  # Duration: indefinite
+            0x00,
+            0xFF,
+            0xFF
+        ]
+
+        return [(can_id, data, 0)]
 
     def encode_vent_lid(self,
                        up_instance: int,
@@ -532,7 +548,8 @@ class RVCCommandEncoder:
         position = position.lower()
         assert position in ['open', 'close'], f"Position must be 'open' or 'close', got {position}"
 
-        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=96)
+        # Vent lids use source address 154 (0x99)
+        can_id = self.build_can_id(self.DGN_DC_DIMMER, source_address=154)
         frames = []
 
         if position == 'open':
