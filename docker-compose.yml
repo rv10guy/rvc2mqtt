@@ -2,11 +2,15 @@ version: '3.8'
 
 services:
   rvc2mqtt:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Use pre-built image from GitHub Container Registry (recommended)
+    image: ghcr.io/rv10guy/rvc2mqtt:latest
+
+    # OR: Build locally (uncomment to build from source)
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
     container_name: rvc2mqtt
-    image: rvc2mqtt:latest
 
     # Use host network mode for simplest configuration
     # This allows direct access to ESP32 SLCAN and MQTT broker
@@ -57,10 +61,19 @@ services:
         max-file: "3"
 
 # Notes:
+# - Uses pre-built image from ghcr.io (automatic builds via GitHub Actions)
 # - Host network mode is recommended for simplest setup
 # - All configuration files are volume mounted from host
 # - Logs persist across container restarts
-# - To start: docker-compose up -d
-# - To stop: docker-compose down
-# - To view logs: docker-compose logs -f
-# - To rebuild: docker-compose up -d --build
+#
+# Commands:
+# - Pull latest image: docker-compose pull
+# - Start: docker-compose up -d
+# - Stop: docker-compose down
+# - View logs: docker-compose logs -f
+# - Update to latest: docker-compose pull && docker-compose up -d
+#
+# To build locally instead:
+# - Uncomment the 'build' section above
+# - Comment out the 'image: ghcr.io/...' line
+# - Run: docker-compose up -d --build
